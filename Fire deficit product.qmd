@@ -1,0 +1,987 @@
+---
+title: "Fire deficit product"
+format: pdf
+#format: docx
+editor: source
+author: Lora Murphy
+date: today
+---
+
+```{r setup, include=FALSE}
+library(terra)
+library(sf)
+library(kableExtra)
+library(ggplot2)
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(messages = FALSE)
+knitr::opts_chunk$set(warnings = FALSE)
+knitr::opts_chunk$set(results = 'asis')
+terraOptions(tempdir="D:/workspace/Lora/temp") # Terminator
+#terraOptions(tempdir="D:/Lora/temp") # Groot
+```
+
+
+
+# Landfire historical fire regime / fire return interval
+
+Fire return interval data is from [Landfire](https://landfire.gov/fire-regime/fri).
+
+## Alaska
+
+No locations in Alaska have a FRI $\leq$ 40 years. No further products will be created for Alaska at this time.
+
+**Output:** none.
+
+## Western US map of Fire Return Interval
+
+**Output:** raster called "west_us_FRI.tif", of CONUS cropped to the WFFRC study area, with a map of Landfire's 2016 FRI_ALLFIR values where FRI_ALLFIR is $\leq$ 40. (See appendix for summary Landfire documentation.)
+
+```{r crop-bps-rast-to-western-us}
+#| eval: FALSE
+
+#----- Load the BPS raster ---------------------------------------------------#
+fri <- rast("Z:/project_data/landfire data/LF2016_FRI_200_CONUS/Tif/LC16_FRI_200.tif")
+fri_crs <- crs(fri)
+
+#-----------------------------------------------------------------------------#
+# A long and painful journey to prepare the study domain raster so that I can
+# successfully crop and mask to it. 
+#-----------------------------------------------------------------------------#
+study_domain <- rast("Z:/project_data/western_fire/for_Lora/study_domain.tif")
+
+#----- Project to the FRI raster. This will mess up the study domain extent --#
+# But if I don't do this...can't mask later, cells won't match.
+study_domain <- project(study_domain, fri)
+
+#----- Now shrink the study domain back down to reasonable size
+# Set 0s to NA
+study_domain <- classify(study_domain, cbind(0, NA))
+# Trim off surrounding NA to re-set the extent
+study_domain <- trim(study_domain)
+writeRaster(study_domain, "study_domain.tif")
+
+#----- Crop and mask study domain --------------------------------------------#
+fri_crop <- crop(fri, study_domain)
+fri_crop <- mask(fri_crop, study_domain)
+
+rm(fri, study_domain)
+gc()
+
+#----- Save our work here ---------------------------------------------------#
+writeRaster(fri_crop, "fri_crop.tif")
+rm(fri_crop)
+gc()
+```
+```{r create-western-us-fri-rast}
+#| eval: FALSE
+#----- Get the CSV data that has fire return interval for all BPS codes ------#
+bps <- read.csv("Z:/project_data/landfire data/LF2016_FRI_200_CONUS/CSV_Data/LF16_FRI_200.csv")
+
+#----- Filter out those units with an all-fire FRI <= 40 years ---------------#
+good_bps <- which(bps$FRI_ALLFIR > 0 & bps$FRI_ALLFIR <= 40) 
+
+#----- Replace BPS code with FRI, making NAs for bad FRIs --------------------#
+# This matrix will be used to create a FRI raster out of the BPS codes 
+# currently stored in the raster
+mat <- matrix(c(bps$Value[good_bps], bps$FRI_ALLFIR[good_bps]), 
+              nrow=length(good_bps), ncol=2)
+
+#-----------------------------------------------------------------------------#
+# This raster is enormous and unwieldy and regularly crashes R just for fun,
+# even on the big machines. We're going to split it up into tiles.
+#-----------------------------------------------------------------------------#
+#----- Make a directory to put the files into --------------------------------#
+if (!dir.exists("tempproc")) dir.create("tempproc")
+
+#----- Divide the raster into tiles for processing ---------------------------#
+fri_crop <- rast("fri_crop.tif")
+tile_size <- c(10000, 10000)  # Size of each tile (rows, columns)
+tiles <- makeTiles(fri_crop, tile_size, filename = "tempproc/tile.tif", 
+                   overwrite = TRUE)
+rm(fri_crop)
+gc()
+
+#----- Replace the BPS codes with FRI, dropping the smalls -------------------#
+# If previous step is already done...
+#tiles <- list.files("tempproc")
+#tiles <- paste0("tempproc/", tiles[-grep("aux", tiles)])
+processed_tiles <- lapply(tiles, function(tile_path) {
+  tile <- rast(tile_path)
+  tile <- classify(tile, mat, others=NA)
+  output_path <- gsub("\\.tif$", "_processed.tif", tile_path)
+  writeRaster(tile, output_path, overwrite = TRUE)
+  return(output_path)
+})
+gc()
+
+
+#----- Mosaic the processed tiles back together ------------------------------#
+processed_tiles <- paste0("tempproc/",
+                          list.files("tempproc", pattern="processed"))
+processed_rasters <- lapply(processed_tiles, rast)
+mosaic <- do.call(terra::mosaic, processed_rasters)
+
+writeRaster(mosaic, "west_us_FRI.tif", overwrite = TRUE)
+```
+```{r create-alaska-fri-rast}
+#| eval: FALSE
+#----- Alaska ----------------------------------------------------------------#
+
+#----- Get the CSV data that has fire return interval for all BPS codes ------#
+ak_bps <- read.csv("Z:/project_data/landfire data/LF2023_FRI_240_AK/CSV_Data/LF23_FRI_240.csv")
+
+#----- Filter out those units with an all-fire FRI <= 40 years ---------------#
+#bps <- bps[bps$FRI_ALLFIR <= 40 & bps$FRI_ALLFIR > 0,]
+bad_bps <- which(ak_bps$FRI_ALLFIR > 40 | ak_bps$FRI_ALLFIR < 0)
+
+akfri <- rast("Z:/project_data/landfire data/LF2023_FRI_240_AK/Tif/LA23_FRI_240.tif")
+```
+```{r}
+#| results: false
+#| message: false
+
+fri <- rast("west_us_FRI.tif")
+
+# This used to use the tigris package, but one day the data wasn't available on
+# line and the code broke. So I downloaded a shapefile instead
+#states <- states(cb=TRUE)
+states <- vect("Data/s_05mr24.shp")
+states <- project(states, fri)
+states <- crop(states, fri)
+plot(fri, axes=F,
+     main="Fire return interval where values <= 40 years")
+plot(states, add=T, fill=NULL)
+```
+
+\newpage
+
+# Fire deficit / surplus
+
+**Output:** raster called "western_us_fire_deficit.tif". The value in each raster is:
+
+$$ def = \frac{N_{fire}}{40/FRI} $$
+where $N_{fire}$ is the number of times each cell has burned in the 1984-2024 period, FRI is the fire return interval (from the "west_us_FRI.tif" raster), and 40 is the length of the study period. Thus, the value will be number of fires divided by number of expected fires; values greater than 1 indicate a fire surplus, and less than one are a deficit.
+
+(I know this isn't a super useful graphic. I'm going to have to figure out how to adjust the scale.)
+
+```{r create-fire-count-raster}
+#| eval: false
+
+#-----------------------------------------------------------------------------#
+# This creates a raster where each cell is a count of the number of fire 
+# polygons that intersect it.
+#-----------------------------------------------------------------------------#
+
+#----- Fire perimeters from Mahsa --------------------------------------------#
+fire_perimeters <- vect("Z:/Mahsa_GF_data/goodfire_data_jan25/goodfire_1985to2024_f1jan25.shp")
+
+#----- Fire return interval --------------------------------------------------#
+fri <- rast("west_us_FRI.tif")
+
+fire_perimeters <- terra::project(fire_perimeters, fri)
+
+#----- Create an output raster -----------------------------------------------#
+num_burns <- rast(fri)
+
+# Rasterize using function to count overlapping polygons
+r_count <- rasterize(fire_perimeters, num_burns, fun="count", background = 0)
+writeRaster(r_count, "num_fires.tif")
+```
+```{r create-fire-deficit-raster}
+#| eval: false
+nfire <- rast("num_fires.tif")
+fri <- rast("west_us_FRI.tif")
+
+def <- nfire / (40/fri)
+writeRaster(def, "western_us_fire_deficit.tif")
+```
+```{r}
+def <- rast("western_us_fire_deficit.tif")
+
+# This doesn't work - error: long vectors not supported yet
+#library(tidyterra)
+#ggplot(def) + 
+#  geom_spatraster(aes(fill=value)) +
+#  ggtitle("Fire deficit / surplus") +
+#  scale_fill_gradient2(low="red", mid="green", high="blue", 
+#                       midpoint=1)
+
+plot(def, axes=F,
+     main="Fire deficit / surplus")
+plot(states, add=T, fill=NULL)
+rm(def)
+invisible(gc())
+```
+
+\newpage
+
+# Forest Area
+
+**Output:** raster called "west_us_forest.tif"
+
+A value of 1 indicates forest according to our definition, NA for all others. Our definition of forest is a pixel that is forest in both [Landfire EVC](https://landfire.gov/vegetation/evc) 2016 and the Landscape Change Monitoring System (LCMS) 2016 data. I received LCMS data from Mahsa.
+
+EVC forest cover classes:
+
+-   Developed-upland deciduous forest
+-   Developed-upland evergreen forest
+-   Developed-upland mixed forest
+-   Tree cover - 50% to 100%
+
+(For a complete list of the cover classes, see the appendix.)
+
+LCMS forest cover class: TREES. 
+
+```{r crop-evc-rast-to-western-us}
+#| eval: FALSE
+
+#----- Load the BPS raster ---------------------------------------------------#
+evc <- rast("Z:/project_data/landfire data/LF2016_EVC_200_CONUS/Tif/LC16_EVC_200.tif")
+study_domain <- rast("study_domain.tif")
+
+#----- Crop and mask study domain --------------------------------------------#
+evc_crop <- crop(evc, study_domain)
+evc_crop <- mask(evc_crop, study_domain)
+
+rm(evc)
+gc()
+
+#----- Save our work here ----------------------------------------------------#
+writeRaster(evc_crop, "evc_crop.tif")
+rm(evc_crop)
+gc()
+```
+```{r crop-lcms-rast-to-western-us}
+#| eval: false
+lcms <- rast("Data/Balch forest cover/Land_cover_2016/LCMS_CONUS_v2023-9_Land_Cover_2016.tif")
+
+study_domain <- rast("study_domain.tif")
+
+#----- Crop and mask to study domain - CRS is compatible ---------------------#
+lcms_crop <- crop(lcms, study_domain)
+lcms_crop <- mask(lcms_crop, study_domain)
+rm(lcms)
+invisible(gc())
+
+writeRaster(lcms_crop, "lcms_crop.tif")
+```
+```{r create-evc-western-us-forest-rast}
+#| eval: FALSE
+#----- Get the CSV data with vegetation codes --------------------------------#
+evc_codes <- read.csv("Z:/project_data/landfire data/LF2016_EVC_200_CONUS/CSV_Data/LF16_EVC_200.csv")
+
+#----- Filter forest cover ---------------------------------------------------#
+good_codes <- grep("Forest", evc_codes$CLASSNAMES)
+x2 <- grep("Tree Cover = 5.*", evc_codes$CLASSNAMES)
+# Drop the first one, 50%
+x2 <- x2[2:length(x2)]
+good_codes <- c(good_codes, x2)
+good_codes <- c(good_codes, grep("Tree Cover = 6.*", evc_codes$CLASSNAMES))
+good_codes <- c(good_codes, grep("Tree Cover = 7.*", evc_codes$CLASSNAMES))
+good_codes <- c(good_codes, grep("Tree Cover = 8.*", evc_codes$CLASSNAMES))
+good_codes <- c(good_codes, grep("Tree Cover = 9.*", evc_codes$CLASSNAMES))
+good_codes <- c(good_codes, grep("Tree Cover >= 99.*", evc_codes$CLASSNAMES))
+
+#----- Make a forest cover mask - 1 if in cover, 0 if not --------------------#
+mat <- matrix(c(evc_codes$VALUE[good_codes], rep(1, length(good_codes))), 
+              nrow=length(good_codes), ncol=2)
+
+evc_crop <- rast("evc_crop.tif")
+evc <- classify(evc_crop, mat, others=NA)
+rm(evc_crop)
+gc()
+writeRaster(evc, "evc_forest.tif", overwrite = TRUE)
+```
+```{r create-lcms-western-us-forest-rast}
+#| eval: false
+lcms_crop <- rast("lcms_crop.tif")
+lcms_crop <- classify(lcms_crop, cbind(1,1), others=NA)
+writeRaster(lcms_crop, "lcms_forest.tif", overwrite = TRUE)
+```
+```{r create-western-us-forest-rast}
+#| eval: false
+evc   <- rast("evc_forest.tif")
+lcms  <- rast("lcms_forest.tif")
+
+all <- sum(evc, lcms, na.rm=T)
+all <- classify(all, cbind(2, 1), others=NA)
+writeRaster(all, "western_us_forest.tif", overwrite = TRUE)
+```
+```{r}
+forest <- rast("western_us_forest.tif")
+plot(forest, axes=F, main="Western US forest cover", col="darkgreen", legend = F)
+plot(states, add=T, fill=NULL)
+rm(forest)
+invisible(gc())
+```
+
+\newpage
+
+# Grassland Area
+
+**Output:** raster called "west_us_grass.tif"
+
+A value of 1 indicates grassland according to our definition, NA for all others. Our definition of grassland is a pixel that is grass in both [Landfire EVC](https://landfire.gov/vegetation/evc) 2016 and the Landscape Change Monitoring System (LCMS) 2016 data.
+
+EVC grass cover classes:
+
+-   Developed-Upland Herbaceous
+-   Developed - Open Space
+-   Herb cover 20-90%
+
+There are herb cover classes < 20%, but this appears to indicate a pixel that is mostly barren.
+
+LCMS forest cover class: GRASS/FORB/HERB. 
+
+```{r create-evc-grass-rast}
+#| eval: FALSE
+#----- Get the CSV data with vegetation codes --------------------------------#
+evc_codes <- read.csv("Z:/project_data/landfire data/LF2016_EVC_200_CONUS/CSV_Data/LF16_EVC_200.csv")
+
+#----- Filter cover to grass cover types -------------------------------------#
+good_codes <- which(evc_codes$VALUE %in% c(
+  16, # Developed-Upland Herbaceous
+  21 # Developed - Open Space
+  #63, # NASS-Row Crop-Close Grown Crop
+  #64, # NASS-Row Crop
+  #65, # NASS-Close Grown Crop
+  #68, # NASS-Wheat
+  #82  # Cultivated Crops
+))
+good_codes <- c(good_codes, grep("Herb Cover = 2.*", evc_codes$CLASSNAMES))
+good_codes <- c(good_codes, grep("Herb Cover = 3.*", evc_codes$CLASSNAMES))
+good_codes <- c(good_codes, grep("Herb Cover = 4.*", evc_codes$CLASSNAMES))
+good_codes <- c(good_codes, grep("Herb Cover = 5.*", evc_codes$CLASSNAMES))
+good_codes <- c(good_codes, grep("Herb Cover = 6.*", evc_codes$CLASSNAMES))
+good_codes <- c(good_codes, grep("Herb Cover = 7.*", evc_codes$CLASSNAMES))
+good_codes <- c(good_codes, grep("Herb Cover = 8.*", evc_codes$CLASSNAMES))
+good_codes <- c(good_codes, grep("Herb Cover = 9.*", evc_codes$CLASSNAMES))
+good_codes <- c(good_codes, grep("Herb Cover >.*", evc_codes$CLASSNAMES))
+
+#----- Make a grass cover mask - 1 if in cover, 0 if not ---------------------#
+mat <- matrix(c(evc_codes$VALUE[good_codes], rep(1, length(good_codes))), 
+              nrow=length(good_codes), ncol=2)
+
+evc_crop <- rast("evc_crop.tif")
+evc <- classify(evc_crop, mat, others=NA)
+rm(evc_crop)
+gc()
+writeRaster(evc, "evc_grass.tif", overwrite = TRUE)
+```
+```{r create-lcms-grass-rast}
+#| eval: false
+
+lcms_crop <- rast("lcms_crop.tif")
+lcms_crop <- classify(lcms_crop, cbind(10,1), others=NA)
+writeRaster(lcms_crop, "lcms_grass.tif", overwrite = TRUE)
+```
+```{r create-western-us-grass-rast}
+#| eval: false
+evc   <- rast("evc_grass.tif")
+lcms  <- rast("lcms_grass.tif")
+
+all <- sum(evc, lcms, na.rm=T)
+all <- classify(all, cbind(2, 1), others=NA)
+writeRaster(all, "western_us_grass.tif", overwrite = TRUE)
+```
+
+```{r}
+grass <- rast("western_us_grass.tif")
+plot(grass, axes=F, main="Western US grass cover", col="darkgoldenrod3", legend = F)
+plot(states, add=T, fill=NULL)
+rm(grass)
+invisible(gc())
+```
+
+# Shrub/chaparral Area
+
+**Output:** raster called "west_us_shrub.tif"
+
+A value of 1 indicates shrubland according to our definition, NA for all others. Our definition of shrubland is a pixel that is shrub in both [Landfire EVC](https://landfire.gov/vegetation/evc) 2016 and the Landscape Change Monitoring System (LCMS) 2016 data.
+
+EVC shrub cover classes:
+
+-   Developed-Upland Shrubland
+-   Shrub cover 20-90% (although actual values only appear up to 79%)
+
+There are shrub cover classes < 20%, but this appears to indicate a pixel that is mostly barren.
+
+LCMS forest cover classes:
+
+-   GRASS/FORB/HERB AND SHRUBS MIX (this is at least 10% shrubs)
+-   TALL SHRUBS
+-   SHRUBS
+
+
+```{r create-evc-shrub-rast}
+#| eval: FALSE
+#----- Get the CSV data with vegetation codes --------------------------------#
+evc_codes <- read.csv("Z:/project_data/landfire data/LF2016_EVC_200_CONUS/CSV_Data/LF16_EVC_200.csv")
+
+#----- Filter cover to grass cover types -------------------------------------#
+good_codes <- which(evc_codes$VALUE %in% c(
+  17 # Developed-Upland Shrubland
+))
+good_codes <- c(good_codes, grep("Shrub Cover = 2.*", evc_codes$CLASSNAMES))
+good_codes <- c(good_codes, grep("Shrub Cover = 3.*", evc_codes$CLASSNAMES))
+good_codes <- c(good_codes, grep("Shrub Cover = 4.*", evc_codes$CLASSNAMES))
+good_codes <- c(good_codes, grep("Shrub Cover = 5.*", evc_codes$CLASSNAMES))
+good_codes <- c(good_codes, grep("Shrub Cover = 6.*", evc_codes$CLASSNAMES))
+good_codes <- c(good_codes, grep("Shrub Cover = 7.*", evc_codes$CLASSNAMES))
+good_codes <- c(good_codes, grep("Shrub Cover = 8.*", evc_codes$CLASSNAMES))
+good_codes <- c(good_codes, grep("Shrub Cover = 9.*", evc_codes$CLASSNAMES))
+good_codes <- c(good_codes, grep("Shrub Cover >.*", evc_codes$CLASSNAMES))
+
+#----- Make a shrub cover mask - 1 if in cover, 0 if not ---------------------#
+mat <- matrix(c(evc_codes$VALUE[good_codes], rep(1, length(good_codes))), 
+              nrow=length(good_codes), ncol=2)
+
+evc_crop <- rast("evc_crop.tif")
+evc <- classify(evc_crop, mat, others=NA)
+rm(evc_crop)
+gc()
+writeRaster(evc, "evc_shrub.tif", overwrite = TRUE)
+```
+```{r create-lcms-shrub-rast}
+#| eval: false
+
+lcms_crop <- rast("lcms_crop.tif")
+lcms_crop <- classify(lcms_crop, 
+      cbind(c(8, # GRASS/FORB/HERB AND SHRUBS MIX
+              6, # TALL SHRUBS
+              7 # SHRUBS
+  ), rep(1,3)), others=NA)
+writeRaster(lcms_crop, "lcms_shrub.tif", overwrite = TRUE)
+```
+```{r create-western-us-shrub-rast}
+#| eval: false
+evc   <- rast("evc_shrub.tif")
+lcms  <- rast("lcms_shrub.tif")
+
+all <- sum(evc, lcms, na.rm=T)
+all <- classify(all, cbind(2, 1), others=NA)
+writeRaster(all, "western_us_shrub.tif", overwrite = TRUE)
+```
+```{r}
+shrub <- rast("western_us_shrub.tif")
+plot(shrub, axes=F, main="Western US shrub cover", col="burlywood4", legend = F)
+plot(states, add=T, fill=NULL)
+rm(shrub)
+invisible(gc())
+```
+
+# Areas excluded from vegetation cover rasters
+
+For our main cover products, EVC and LCMS, what are the cover classes of those parts of the study domain that do not fall into any of our three rasters? Note that the two products had to agree on whether a pixel was forest, grass, or shrub, so there will be landcovers that seem like they should have gone into one of our rasters but didn't.
+
+```{r id-veg-gaps}
+#| eval: false
+
+forest <- rast("western_us_forest.tif")
+grass  <- rast("western_us_grass.tif")
+shrub  <- rast("western_us_shrub.tif")
+
+all <- sum(forest, grass, shrub, na.rm=T)
+rm(forest, grass, shrub)
+
+evc <- rast("evc_crop.tif")
+evc_out <- mask(evc, all, inverse=T)
+writeRaster(evc_out, "evc_excluded.tif")
+
+x <- freq(evc_out)
+x$area <- (x$count * prod(res(evc_out)))/10000
+write.csv(x, "EVC coverage gaps.csv")
+rm(evc_out, evc)
+
+lcms <- rast("lcms_crop.tif")
+lcms_out <- mask(lcms, all, inverse=T)
+writeRaster(lcms_out, "lcms_excluded.tif")
+
+x <- freq(lcms_out)
+x$area <- (x$count * prod(res(lcms_out)))/10000
+write.csv(x, "LCMS coverage gaps.csv")
+```
+```{r}
+evc <- read.csv("EVC coverage gaps.csv")
+evc$count <- NULL
+evc$X <- NULL
+evc$layer <- NULL
+evc$area <- prettyNum(round(evc$area, 0), big.mark=",")
+knitr::kable(evc, row.names = F, col.names = c("EVC cover type", "Area (ha)"))
+
+lcms <- read.csv("LCMS coverage gaps.csv")
+lcms$count <- NULL
+lcms$X <- NULL
+lcms$layer <- NULL
+lcms$area <- prettyNum(round(lcms$area, 0), big.mark=",")
+knitr::kable(lcms, row.names = F, col.names = c("LCMS cover type", "Area (ha)"))
+```
+
+\newpage
+
+# Appendix - Landfire FRI documentation
+
+The most recent data for CONUS is 2016. For Alaska it is 2023. Considering that the previous AK dataset is 2001, I will go ahead and use the most recent data for both even though they are not from the same timeframe.
+
+There are 4 possible fire return interval codes:
+
+-   Fire Return Interval (FRI) replacement fire (FRI_REPLAC)
+-   Fire Return Interval mixed fire (FRI_MIXED)
+-   Fire Return Interval surface fire (FRI_SURFAC)
+-   Fire Return Interval all fire. Quantifies the average period between fires under the presumed historical fire regime. Previously Mean Fire Return Interval (MFRI) (FRI_ALLFIR)
+
+From the metadata for the fire return interval product:
+
+The Fire Return Interval (FRI) product quantifies the average period between fires under the presumed historical fire regime. FRI is intended to describe one component of historical fire regime characteristics in the context of the broader historical time period represented by the LANDFIRE Biophysical Settings (BpS) product and BpS Model documentation. To learn more about FRI go to https://landfire.gov/fire-regime/fri. At the release of LF 2016 Remap Fire Regime Groups (FRG_NEW), Percent of Low-severity Fire (PRC_SURFAC), Percent of Mixed-severity Fire (PRC_MIXED), Percent of Replacement-severity Fire (PRC_REPLAC), and Fire Return Interval (FRI_ALLFIR) were included as attributes in the Biophysical Settings (BPS) product. Then in 2024 these products became stand-alone products once again. With the 3 Percent Severity products merged into a single product called Percent Fire Severity (PFS). These products can now be found in both places, as attributes of BPS and as their own individual products.
+
+LF 2016 Remap (LF Remap) is a comprehensive mapping effort that uses recent data to create a new base map product suite that better represents contemporary conditions. LF Remap represents circa 2016 ground conditions and is designed to produce vegetation, disturbance, and fuels products that inform wildland fire and ecological decision systems. LF Remap has improved past methodologies and processes to incorporate current satellite imagery, contemporary data sources, and the latest software and hardware technologies. Final LF Remap products offer significant improvements to all previous LF versions (read more about versions here https://www.landfire.gov/lf_schedule.php). LF Remap products are designed to facilitate national and regional level strategic fire and resource management planning and reporting of management activities. The principal purposes of the products include providing, 1) national level, landscape scale geospatial products to support fire and fuels management planning, and 2) consistent fuels products to support fire planning, analysis, and budgeting to evaluate fire management alternatives. Products are created at a 30 meter raster; however, the applicability of products varies by location and specific use. LF products were designed to support 1) national (all states) strategic planning, 2) regional (single large states or groups of smaller states), and 3) strategic/tactical planning for large sub regional landscapes and Fire Management Units (FMUs) (such as significant portions of states or multiple federal administrative entities). The applicability of LF products to support fire and land management planning on smaller areas will vary by product, location, and specific use. Managers and planners must evaluate LF products according to the scale and requirements specific to their needs.
+
+\newpage
+
+# Appendix - vegetation type documentation
+
+## Landfire Existing Vegetation Cover (EVC)
+
+### Lifeform Modeling
+
+From the technical documentation, on how vegetation cover is assigned:
+
+The first step for vegetation modeling and mapping was to separate the landscape into three lifeforms: herbaceous, shrub, and treed areas. Each LFRDB plot is assigned to one of these three dominant physiognomic or lifeform types based on the assigned EVT–ES label derived from the Auto-Key.
+
+A common occurrence that arose during the LF 2016 Remap effort was the assignment of multiple lifeforms to a given ES. These types and their associated lifeform options were identified before modeling with assistance from Nature-Serve and comparison to previous products. Where feasible, plots for these types were reassigned the appropriate lifeform using species absolute cover information from the LFRDB. Table and field descriptions are available in the LFRDB data dictionary (LANDFIRE, 2021b).
+
+Lifeform cover was derived from LFTreeCov, LFShrubCov, and LFHerbCov fields in the stands table using the following logic:
+
+-   If both tree and shrub lifeforms were present in a plot and tree cover was greater than or equal to ($\geq$) 10-percent, it was assigned tree, otherwise shrub.
+
+-   If both tree and herbaceous lifeforms were present in a plot and shrub cover was $\geq$ 10-percent, it was assigned shrub, otherwise herbaceous.
+
+-   If no cover was present for the plot, then the higher lifeform of the options (the dominant lifeform) was assigned.
+
+### Complete cover class listing for LANDFIRE
+
+```{r}
+evc_codes <- read.csv("Z:/project_data/landfire data/LF2016_EVC_200_CONUS/CSV_Data/LF16_EVC_200.csv")
+knitr::kable(evc_codes[,1:2])
+```
+
+\newpage
+
+### Cover class listing for LCMS
+
+1: TREES: The majority of the pixel is comprised of live or standing dead trees.
+
+2: TALL SHRUBS AND TREES MIX: (SEAK Only) The majority of the pixel is comprised of shrubs greater than 1m in height and is also comprised of at least 10 percent live or standing dead trees.
+
+3: SHRUBS AND TREES MIX: The majority of the pixel is comprised of shrubs and is also comprised of at least 10 percent live or standing dead trees.
+
+4: GRASS/FORB/HERB AND TREES MIX: The majority of the pixel is comprised of perennial grasses, forbs, or other forms of herbaceous vegetation and is also comprised of at least 10 percent live or standing dead trees.
+
+5: BARREN AND TREES MIX: The majority of the pixel is comprised of bare soil exposed by disturbance (e.g., soil uncovered by mechanical clearing or forest harvest), as well as perennially barren areas such as deserts, playas, rock outcroppings (including minerals and other geologic materials exposed by surface mining activities), sand dunes, salt flats, and beaches. Roads made of dirt and gravel are also considered barren and is also comprised of at least 10 percent live or standing dead trees.
+
+6: TALL SHRUBS: (SEAK Only) The majority of the pixel is comprised of shrubs greater than 1m in height.
+
+7: SHRUBS: The majority of the pixel is comprised of shrubs.
+
+8: GRASS/FORB/HERB AND SHRUBS MIX: The majority of the pixel is comprised of perennial grasses, forbs, or other forms of herbaceous vegetation and is also comprised of at least 10 percent shrubs.
+
+9: BARREN AND SHRUBS MIX: The majority of the pixel is comprised of bare soil exposed by disturbance (e.g., soil uncovered by mechanical clearing or forest harvest), as well as perennially barren areas such as deserts, playas, rock outcroppings (including minerals and other geologic materials exposed by surface mining activities), sand dunes, salt flats, and beaches. Roads made of dirt and gravel are also considered barren and is also comprised of at least 10 percent shrubs.
+
+10: GRASS/FORB/HERB: The majority of the pixel is comprised of perennial grasses, forbs, or other forms of herbaceous vegetation.
+
+11: BARREN AND GRASS/FORB/HERB MIX: The majority of the pixel is comprised of bare soil exposed by disturbance (e.g., soil uncovered by mechanical clearing or forest harvest), as well as perennially barren areas such as deserts, playas, rock outcroppings (including minerals and other geologic materials exposed by surface mining activities), sand dunes, salt flats, and beaches. Roads made of dirt and gravel are also considered barren and is also comprised of at least 10 percent perennial grasses, forbs, or other forms of herbaceous vegetation.
+
+12: BARREN OR IMPERVIOUS: The majority of the pixel is comprised of 1) bare soil exposed by disturbance (e.g., soil uncovered by mechanical clearing or forest harvest), as well as perennially barren areas such as deserts, playas, rock outcroppings (including minerals and other geologic materials exposed by surface mining activities), sand dunes, salt flats, and beaches. Roads made of dirt and gravel are also considered barren or 2) man-made materials that water cannot penetrate, such as paved roads, rooftops, and parking lots.
+
+13: SNOW OR ICE: The majority of the pixel is comprised of snow or ice.
+
+14: WATER: The majority of the pixel is comprised of water.
+
+15: NON-PROCESSING AREA MASK: Where no cloud or cloud shadow-free data are available to produce an output.
+
+\newpage
+
+### LCMAP Primary Land Cover (LCPRI)
+
+From the docs:
+
+> The need for improved understanding and management of land surface change requires increased understanding of the basic drivers of change, identification of potential consequences of change on human and natural systems, and greater insight into the impacts and feedbacks of climate change. The geospatial community requires a new generation of monitoring data and information to meet this need for a wide range of applications. Land cover and land change products need to span larger geographic extents, over longer time periods, at higher spatial resolutions, and provide more systematic and consistent information on change than ever before. To help meet these growing demands, the United States Geological Survey (USGS) has developed the Land Change Monitoring, Assessment, and Projection (LCMAP) initiative.
+
+This is based on the National Land Cover Database (NLCD), and looks to be currently deprecated in favor of the NLCD.
+
+| Pixel Value | Land Cover Class |
+|-------------|------------------|
+| 1           | Developed        |
+| 2           | Cropland         |
+| 3           | Grass/Shrub      |
+| 4           | Tree Cover       |
+| 5           | Water            |
+| 6           | Wetland          |
+| 7           | Ice/Snow         |
+| 8           | Barren           |
+
+\newpage
+
+# Appendix - evolution of methods
+
+My first raster products were clipped to the 100th line of longitude instead of to the study domain. There is an email note where this is referenced.
+
+The current vegetation class definitions were the result of some trial and error, and comparison with other vegetation products. Vegetation class definitions were initially based on Landfire EVC, and we elected to keep that basis. 
+
+## For forest:
+
+EVC cover classes of interest:
+
+-   Developed-upland deciduous forest
+-   Developed-upland evergreen forest
+-   Developed-upland mixed forest
+-   Tree cover - 10% to 93%
+
+The developed classes are based on National Landcover Database areas classified as "developed open space". The complete definition, from NLCD:
+
+> Developed, Open Space- areas with a mixture of some constructed materials, but mostly vegetation in the form of lawn grasses. Impervious surfaces account for less than 20% of total cover. These areas most commonly include large-lot single-family housing units, parks, golf courses, and vegetation planted in developed settings for recreation, erosion control, or aesthetic purposes.
+
+From the LANDFIRE technical documentation:
+
+> NLCD class 21 (developed open space) was made “burnable” by splitting it into five “burnable urban” classes that capture the variety of lifeform (herb, shrub, tree) and leaf form (deciduous, evergreen, mixed) across the open space designation\[...\].
+
+Based on this, I proposed a definition of "forest cover" as the three developed forest classes, plus those areas where tree cover is greater than 50%. 
+
+### Comparing this forest coverage to other forest coverage
+
+We'd like to compare forest to the two forest products used by Jennifer Balch's team in the good fire analysis. About that, Mahsa says:
+
+> The forest data that they used is a combination of LCMS (landscape change monitoring system) and LCPRI (LCMAP Primary Land Cover). Technically, for this analysis, we need to evaluate each fire year using separate forest maps corresponding to that specific year. So, they didn’t use just one map for the analysis; instead, it’s a different forest map for each year. We use and analyze these image collections directly on Google Earth Engine (GEE). So the data used is multi-year LCMS and LCPRI, which are available both in GEE and their website.
+
+> Jennifer's team defined forested regions as areas where LCPRI equals 4 and LCMS equals 1.
+
+Let's compare 2016 data for these two products to ours.
+
+```{r crop-lcpri-rast-to-western-us}
+#| eval: false
+lcpri <- rast("Data/Balch forest cover/LCMAP_CU_2016_V13_LCPRI.tif")
+study_domain <- rast("study_domain.tif")
+lcpri_crop <- crop(lcpri, study_domain)
+lcpri_crop <- mask(lcpri_crop, study_domain)
+rm(lcpri)
+invisible(gc())
+
+writeRaster(lcpri_crop, "lcpri_crop.tif")
+```
+
+```{r create-lcpri-western-us-forest-rast}
+#| eval: false
+lcpri_crop <- rast("lcpri_crop.tif")
+lcpri_crop <- classify(lcpri_crop, cbind(4,1), others=NA)
+writeRaster(lcpri_crop, "lcpri_forest.tif")
+```
+
+```{r results='asis'}
+lcms <- rast("lcms_forest.tif")
+plot(lcms, axes=F, main="LCMS forest cover", col="darkgreen", legend = F)
+plot(states, add=T, fill=NULL)
+rm(lcms)
+invisible(gc())
+
+cat("\n\n")
+
+lcpri <- rast("lcpri_forest.tif")
+plot(lcpri, axes=F, main="LCPRI forest cover", col="darkgreen", legend = F)
+plot(states, add=T, fill=NULL)
+rm(lcpri)
+invisible(gc())
+```
+
+
+```{r}
+#-----------------------------------------------------------------------------#
+# Comparison of forest products
+#-----------------------------------------------------------------------------#
+#evc   <- rast("evc_forest.tif")
+#lcms  <- rast("lcms_forest.tif")
+#lcpri <- rast("lcpri_forest.tif")
+
+#x <- freq(evc)
+#evc_forest_area <- (x$count * prod(res(evc)))/10000
+evc_forest_area <- 26649906
+
+#x <- freq(lcms)
+#lcms_forest_area <- (x$count * prod(res(lcms)))/10000
+lcms_forest_area <- 79246265
+
+#x <- freq(lcpri)
+#lcpri_forest_area <- (x$count * prod(res(lcpri)))/10000
+lcpri_forest_area <- 70939594
+
+
+knitr::kable(
+  data.frame("Raster" = c("Landfire EVC", "LCMS", "LCPRI"),
+            "Area" = c(prettyNum(evc_forest_area, big.mark=","), 
+                       prettyNum(lcms_forest_area, big.mark=","),
+                       prettyNum(lcpri_forest_area, big.mark=","))),
+  col.names = c("Forest product", "Area (ha)"))
+```
+
+```{r create-three-way-forest-comparison}
+#| eval: false
+evc   <- rast("evc_forest.tif")
+lcms  <- rast("lcms_forest.tif")
+lcpri <- rast("lcpri_forest.tif")
+
+all <- sum(evc, lcms, lcpri, na.rm=T)
+writeRaster(all, "forest_tally.tif")
+```
+
+```{r}
+all <- rast("forest_tally.tif")
+plot(all, axes=F, main="How many products say this place is forest?")
+plot(states, add=T, fill=NULL)
+```
+
+This implies that our definition of "forest" is quite a bit stricter than the one used by Jennifer Balch. So let's see if we can see how to align them (whether or not we decide to actually do so). Let's say that all tree cover $\geq$ 20% is forest.
+
+
+```{r create-looser-evc-forest-rast}
+#| eval: FALSE
+#----- Get the CSV data with vegetation codes --------------------------------#
+evc_codes <- read.csv("Z:/project_data/landfire data/LF2016_EVC_200_CONUS/CSV_Data/LF16_EVC_200.csv")
+
+#----- Filter forest cover ---------------------------------------------------#
+good_codes <- grep("Forest", evc_codes$CLASSNAMES)
+good_codes <- c(good_codes, grep("Tree Cover = 2.*", evc_codes$CLASSNAMES))
+good_codes <- c(good_codes, grep("Tree Cover = 3.*", evc_codes$CLASSNAMES))
+good_codes <- c(good_codes, grep("Tree Cover = 4.*", evc_codes$CLASSNAMES))
+good_codes <- c(good_codes, grep("Tree Cover = 5.*", evc_codes$CLASSNAMES))
+good_codes <- c(good_codes, grep("Tree Cover = 6.*", evc_codes$CLASSNAMES))
+good_codes <- c(good_codes, grep("Tree Cover = 7.*", evc_codes$CLASSNAMES))
+good_codes <- c(good_codes, grep("Tree Cover = 8.*", evc_codes$CLASSNAMES))
+good_codes <- c(good_codes, grep("Tree Cover = 9.*", evc_codes$CLASSNAMES))
+good_codes <- c(good_codes, grep("Tree Cover >= 99.*", evc_codes$CLASSNAMES))
+good_codes <- c(good_codes)
+
+#----- Make a forest cover mask - 1 if in cover, 0 if not --------------------#
+mat <- matrix(c(evc_codes$VALUE[good_codes], rep(1, length(good_codes))), 
+              nrow=length(good_codes), ncol=2)
+
+evc_crop <- rast("evc_crop.tif")
+evc <- classify(evc_crop, mat, others=NA)
+rm(evc_crop)
+gc()
+writeRaster(evc, "evc_forest_loose.tif", overwrite = TRUE)
+```
+
+```{r}
+evc <- rast("evc_forest_loose.tif")
+#x <- freq(evc)
+#evc_forest_area <- (x$count * prod(res(evc)))/10000
+evc_forest_area <- 73571515
+
+plot(evc, axes=F, legend=F, col="darkgreen",
+     main=paste("EVC Looser Forest Definition -", 
+                             prettyNum(evc_forest_area, big.mark=","), "ha"))
+plot(states, add=T, fill=NULL)
+```
+
+## For grassland:
+
+Continuing with the Landfire EVC product - cover classes for grassland. I will assume that for fire fuel purposes, grain crops will **not** be counted in this category.
+
+Mixed cover classes are hard! Let's try:
+
+-   Developed-Upland Herbaceous
+-   Developed - Open Space (*not entirely sure on this one*)
+-   Herb cover 20-90%
+
+The documentation states that the highest lifeform gets the class assignment, with the order being tree, shrub, herbaceous. If something is classed as herbaceous, the way I read that, there is less than 10% of either trees or shrubs present. **Do we assume that if herb cover is 10%, the other 90% of cover is essentially barren?** On the assumption that that is possible, I will not include herb cover \< 20% (*higher?*)
+
+As before, let us compare with the other landcover products we have. For LCMS, let's say that grassland is only GRASS/FORB/HERB.
+
+I will leave out GRASS/FORB/HERB AND TREES MIX, because it is at least 10% tree cover.
+
+I will leave out GRASS/FORB/HERB AND SHRUBS MIX, semi-arbitrarily? But under the assumption that if it is included anywhere, this will go in our shrubland classification.
+
+I will leave out BARREN AND GRASS/FORB/HERB MIX, although this might match up with our scanty herb cover classes.
+
+LCPRI has one "Cropland" and one "Grass/Shrub" cover class. Since this does not split out grass and shrubs as we require, drop this for now.
+
+```{r}
+#| results: asis
+
+evc <- rast("evc_grass.tif")
+#x <- freq(evc)
+#evc_grass_area <- (x$count * prod(res(evc)))/10000
+#evc_grass_area <- 78078768 with crops
+evc_grass_area <- 60114973#
+plot(evc, axes=F,  legend = F, col = "darkgoldenrod3",
+     main=paste("Landfire EVC West US Grass Cover -", 
+                prettyNum(evc_grass_area, big.mark=","), "ha"))
+plot(states, add=T, fill=NULL)
+rm(evc)
+invisible(gc())
+
+cat("\n\n")
+
+lcms <- rast("lcms_grass.tif")
+x <- freq(lcms)
+lcms_grass_area <- (x$count * prod(res(lcms)))/10000
+#lcms_grass_area <- 160156968 with GRASS/FORB/HERB AND SHRUBS MIX
+lcms_grass_area <- 67670210
+plot(lcms, axes=F,  legend = F, col = "darkgoldenrod3",
+     main=paste("LCMS West US Grass Cover -", 
+                prettyNum(lcms_grass_area, big.mark=","), "ha"))
+plot(states, add=T, fill=NULL)
+rm(lcms)
+invisible(gc())
+```
+
+Extra grass area from LCMS appears to be largely what Landfire has classified as cropland, based on visual inspection but not quantification.
+
+\newpage
+
+## For shrub/chaparral:
+
+Continuing with the Landfire EVC product - cover classes for shrubland.
+
+-   Developed-Upland Shrubland
+-   Shrub cover 20-90% (although actual values only appear up to 79%)
+
+## Issues
+
+Same issue as grass: if shrubs are 10% of cover, what is the rest? Not trees, or it would be tree cover. It is probably grass or barren or some combination. I will omit covers below 20%, fairly arbitrarily.
+
+Compare with LCMS. Again, we have a lot of mixed classes that may or may not count here. Let's say that these classes are shrubland:
+
+-   GRASS/FORB/HERB AND SHRUBS MIX (this is at least 10% shrubs)
+-   TALL SHRUBS
+-   SHRUBS
+
+Other possibilities that I am omitting in this version: TALL SHRUBS AND TREES MIX, SHRUBS AND TREES MIX, BARREN AND SHRUBS MIX
+
+
+
+```{r}
+#| results: asis
+
+evc <- rast("evc_shrub.tif")
+#x <- freq(evc)
+#evc_shrub_area <- (x$count * prod(res(evc)))/10000
+evc_shrub_area <- 123684737
+plot(evc, axes=F,  legend = F, col = "burlywood4",
+     main=paste("Landfire EVC West US Shrub Cover -", 
+                prettyNum(evc_shrub_area, big.mark=","), "ha"))
+plot(states, add=T, fill=NULL)
+rm(evc)
+invisible(gc())
+
+cat("\n\n")
+
+lcms <- rast("lcms_shrub.tif")
+#x <- freq(lcms)
+#lcms_shrub_area <- (x$count * prod(res(lcms)))/10000
+lcms_shrub_area <- 104228761
+plot(lcms, axes=F,  legend = F, col = "burlywood4",
+     main=paste("LCMS West US Shrub Cover -", 
+                prettyNum(lcms_shrub_area, big.mark=","), "ha"))
+plot(states, add=T, fill=NULL)
+rm(lcms)
+invisible(gc())
+```
+
+Disagreement between these rasters appears to be based on how much barren land is acceptable, and where mixed classes fall.
+
+```{r archive-crop}
+#| eval: FALSE
+
+#-----------------------------------------------------------------------------#
+# This was the first thing I tried, but Winslow said I went too far east and
+# gave me a study domain raster to use instead.
+#-----------------------------------------------------------------------------#
+
+#----- Load the BPS raster ---------------------------------------------------#
+fri <- rast("Z:/project_data/landfire data/LF2016_FRI_200_CONUS/Tif/LC16_FRI_200.tif")
+
+#----- Crop to bounding box of Western US ------------------------------------#
+# This is for WFFRC so split along line of 100 degrees west longitude
+# I did this exercise and did a transformation so I know the number in 
+# the FRI projection
+#west_us <- vect(ext(-125, -100, 27, 49.5), crs="+proj=longlat +datum=WGS84")
+split_longitude <- 293952
+west_us <- vect(matrix(c(ext(fri)$xmin,   ext(fri)$ymin, 
+                         ext(fri)$xmin,   ext(fri)$ymax, 
+                         split_longitude, ext(fri)$ymin, 
+                         split_longitude, ext(fri)$ymax, 
+                         ext(fri)$xmin,   ext(fri)$ymin),
+                         ncol = 2, byrow = TRUE), type = "polygons", 
+                 crs = crs(fri))
+
+fri_crop <- crop(fri, west_us)
+```
+
+\newpage
+
+# Appendix - communications and directives
+
+### From Winslow, via Slack, 12/6/2024, kicking things off:
+
+> Moore program officers wanted us to calculate a 30 m fire deficit/fire surplus product for western US forests. I don't think that's possible for all western forests. But I do think think its possible to do 2 things.
+
+> 1.  calculate fire deficit and surplus for all counties and level 3 ecoregions in CONUS and Alaska and then calculate fire deficit at a 30-m resolution where the historical fire return interval is = or < the length of the observed record for fire 1984-2024.
+
+> To start looking at this, we need the following things.
+
+> 1.  Download the landfire/historical fire regime/ fire return interval product at https://landfire.gov/fire-regime/fri. Map out where historical fire regime is 40 years or less.
+
+> 2.  See what proportion of that area is in forest vs non forest vegetation types using landfire existing vegetation cover (https://landfire.gov/vegetation/evc).
+
+> 3.  Find the best more comprehensive record possible of fire perimeters for 1984-2024. This step will take longer but Mahsa and Jaz are both thinking about it. So we could group up on that piece!
+
+
+### From Winslow, via Slack, 1/25/2025, in response to first drafts of forest and FRI rasters:
+
+> Hi Lora, Thanks so much for sharing this. Really nice. Now that you have all fire perimeters, I think we are ready to move forward. So heres what I think the next steps are: 
+
+> 1. Take a look at the spatial distribution of fires on the eastern side. I think you may have too much of the great prairies included. We could use the DYNAFFOREST study area raster (I can give it to you) to limit our geographic domain.
+
+> 2. I like your definition of forest. I'd also like to compare it to the two forest products used by Jennifer Balch's team in the good fire analysis. Mahsa has those. 
+
+> 3. We need to classify where in the study area is grassland and where is shrubland/chapperal.
+
+> 4. For all places where the landfire FRI is less than 40 years, we next produce a map of fire deficit and surplus by calculating the number of times each cell burned in the observational record, and dividing by its landfire historcal record. on the deficit side and surplus sides it will be a conservative estimate.
+
+> 5. Then we need to know what the deficit vs surplus is for forests with longer FRIs than the observed record. We can't do that at the pixel scale cuz we need to use space for time substitution. So at the level 3 ecoregion level we calculate the fire rotation by veg type (forest, grassland, shrub) the historical fire rotation is the mean fire return interval. The observed fire rotation is calculated as we calculated fire rotation periods (FRPs), defined as the time it takes to burn an area equal in size to the study area:
+ t/∑ai/A
+ , where t is the time period evaluated, ai is annual area burned in year i, and A is the size of the study area.
+
+> It is from this paper: https://iopscience.iop.org/article/10.1088/1748-9326/acee16/meta
+
+> Bonus: I also want to know how much of the western US forests and shrublands (including Alaska) was historically in a long interval stand replacing fire regime vs low severity frequent fire regime.  To do so use the landfire fire regime group (frg_new) IIIA, IvA and IVB (stand replacing) vs IA-IC (frequent fire low severity) from this dataset: https://landfire.gov/fire-regime/frg
+
+### From Winslow, email, 2/11/2025, in response to multi-product forest comparison and first drafts of grass and shrub rasters:
+
+> A few comments here:
+> \[...\] I'm supportive of your classification strategies for veg type. 
+
+> I think moving forward, given that our Landfire based classification and LCMS are more conservative in general than the LCPRI, We should do the classification as follows: drop LCPRI. If LCMS and our Landfire based classification agree that a pixel is a given veg type, it is that veg type, drop pixels with disagreement. 
+
+> Once you create the final grassland, shrubland, forest raster layers, could you please:
+Further break forest into dry frequent fire forests, mixed severity fire forest, and long interval stand replacing fire forests by using the following groupings 
+This can be accomplished using the FRG_New variable in the BPS table. 
+Dry frequent fire forests would be group 1 A-1C
+Mixed severity fire regimes would be group IIIA-IIIB
+Long interval stand replacing fire forests: IVA-IVB and potentiallly with VA and VB. I want to see how this looks including only the group IV categories alone and when IV and V categories are grouped together.
+Once I look at those maps, we can make adjustments. Then I'd like you to send the grassland, shrubland, dry frequent fire forests, mixed severity forests, and high severity forest rasters to Mahsa and Crystal for another paper we are working on.
+
+> Then we can keep on keeping on calculating deficit and suprlus as previously discussed. 
+
+### And also, same day:
+
+> I'm also thinking about analyses we could do with the pixel level fire deficit info for frequent fire forests once estimates of fire deficit/surplus are produced
+
+> 1. We could calculate trends in the area in different fire deficits over the observational period
+
+> 2. We could quantify the drivers of fire deficit/surplus in frequent fire forests as a function of climate (temp/precip/vpd normals), topography (slope, aspect), and human factors (distance to road, urban centers), vegetation type (three relevant classes; grassland/shrubland/frequent fire forests)
+
+> open to additional ideas
+
+> Then at the ecoregion III level that includes all forest types, 
+> we could run DYNAFFOREST to compare during the observational period and run the model into the future to determine when different ecoregions cross the threshold from deficit to surplus. 
