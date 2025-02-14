@@ -22,8 +22,6 @@ terraOptions(tempdir="D:/workspace/Lora/temp") # Terminator
 #terraOptions(tempdir="D:/Lora/temp") # Groot
 ```
 
-
-
 # Landfire historical fire regime / fire return interval
 
 Fire return interval data is from [Landfire](https://landfire.gov/fire-regime/fri).
@@ -38,7 +36,7 @@ No locations in Alaska have a FRI $\leq$ 40 years. No further products will be c
 
 **Output:** raster called "west_us_FRI.tif", of CONUS cropped to the WFFRC study area, with a map of Landfire's 2016 FRI_ALLFIR values where FRI_ALLFIR is $\leq$ 40. (See appendix for summary Landfire documentation.)
 
-```{r crop-bps-rast-to-western-us}
+```{r crop-fri-rast-to-western-us}
 #| eval: FALSE
 
 #----- Load the BPS raster ---------------------------------------------------#
@@ -62,18 +60,19 @@ study_domain <- classify(study_domain, cbind(0, NA))
 study_domain <- trim(study_domain)
 writeRaster(study_domain, "../temp_rasters/study_domain.tif")
 
-#----- Crop and mask study domain --------------------------------------------#
+#----- Crop and mask to study domain -----------------------------------------#
 fri_crop <- crop(fri, study_domain)
 fri_crop <- mask(fri_crop, study_domain)
 
 rm(fri, study_domain)
 gc()
 
-#----- Save our work here ---------------------------------------------------#
+#----- Save our work here ----------------------------------------------------#
 writeRaster(fri_crop, "../temp_rasters/fri_crop.tif")
 rm(fri_crop)
 gc()
 ```
+
 ```{r create-western-us-fri-rast}
 #| eval: FALSE
 #----- Get the CSV data that has fire return interval for all BPS codes ------#
@@ -125,6 +124,7 @@ mosaic <- do.call(terra::mosaic, processed_rasters)
 
 writeRaster(mosaic, "../west_us_FRI.tif", overwrite = TRUE)
 ```
+
 ```{r create-alaska-fri-rast}
 #| eval: FALSE
 #----- Alaska ----------------------------------------------------------------#
@@ -138,6 +138,7 @@ bad_bps <- which(ak_bps$FRI_ALLFIR > 40 | ak_bps$FRI_ALLFIR < 0)
 
 akfri <- rast("Z:/project_data/landfire data/LF2023_FRI_240_AK/Tif/LA23_FRI_240.tif")
 ```
+
 ```{r}
 #| results: false
 #| message: false
@@ -161,8 +162,7 @@ plot(states, add=T, fill=NULL)
 
 **Output:** raster called "western_us_fire_deficit.tif". The value in each raster is:
 
-$$ def = \frac{N_{fire}}{40/FRI} $$
-where $N_{fire}$ is the number of times each cell has burned in the 1984-2024 period, FRI is the fire return interval (from the "west_us_FRI.tif" raster), and 40 is the length of the study period. Thus, the value will be number of fires divided by number of expected fires; values greater than 1 indicate a fire surplus, and less than one are a deficit.
+$$ def = \frac{N_{fire}}{40/FRI} $$ where $N_{fire}$ is the number of times each cell has burned in the 1984-2024 period, FRI is the fire return interval (from the "west_us_FRI.tif" raster), and 40 is the length of the study period. Thus, the value will be number of fires divided by number of expected fires; values greater than 1 indicate a fire surplus, and less than one are a deficit.
 
 (I know this isn't a super useful graphic. I'm going to have to figure out how to adjust the scale.)
 
@@ -189,6 +189,7 @@ num_burns <- rast(fri)
 r_count <- rasterize(fire_perimeters, num_burns, fun="count", background = 0)
 writeRaster(r_count, "../temp_rasters/num_fires.tif")
 ```
+
 ```{r create-fire-deficit-raster}
 #| eval: false
 nfire <- rast("../temp_rasters/num_fires.tif")
@@ -197,6 +198,7 @@ fri <- rast("../west_us_FRI.tif")
 def <- nfire / (40/fri)
 writeRaster(def, "../western_us_fire_deficit.tif")
 ```
+
 ```{r}
 def <- rast("../western_us_fire_deficit.tif")
 
@@ -219,7 +221,7 @@ invisible(gc())
 
 # Forest Area
 
-**Output:** raster called "west_us_forest.tif"
+**Output:** raster called "western_us_forest.tif"
 
 A value of 1 indicates forest according to our definition, NA for all others. Our definition of forest is a pixel that is forest in both [Landfire EVC](https://landfire.gov/vegetation/evc) 2016 and the Landscape Change Monitoring System (LCMS) 2016 data. I received LCMS data from Mahsa.
 
@@ -232,7 +234,7 @@ EVC forest cover classes:
 
 (For a complete list of the cover classes, see the appendix.)
 
-LCMS forest cover class: TREES. 
+LCMS forest cover class: TREES.
 
 ```{r crop-evc-rast-to-western-us}
 #| eval: FALSE
@@ -253,6 +255,7 @@ writeRaster(evc_crop, "../temp_rasters/evc_crop.tif")
 rm(evc_crop)
 gc()
 ```
+
 ```{r crop-lcms-rast-to-western-us}
 #| eval: false
 lcms <- rast("Data/Balch forest cover/Land_cover_2016/LCMS_CONUS_v2023-9_Land_Cover_2016.tif")
@@ -267,6 +270,7 @@ invisible(gc())
 
 writeRaster(lcms_crop, "../temp_rasters/lcms_crop.tif")
 ```
+
 ```{r create-evc-western-us-forest-rast}
 #| eval: FALSE
 #----- Get the CSV data with vegetation codes --------------------------------#
@@ -294,12 +298,14 @@ rm(evc_crop)
 gc()
 writeRaster(evc, "../temp_rasters/evc_forest.tif", overwrite = TRUE)
 ```
+
 ```{r create-lcms-western-us-forest-rast}
 #| eval: false
 lcms_crop <- rast("../temp_rasters/lcms_crop.tif")
 lcms_crop <- classify(lcms_crop, cbind(1,1), others=NA)
 writeRaster(lcms_crop, "../temp_rasters/lcms_forest.tif", overwrite = TRUE)
 ```
+
 ```{r create-western-us-forest-rast}
 #| eval: false
 evc   <- rast("../temp_rasters/evc_forest.tif")
@@ -309,11 +315,97 @@ all <- sum(evc, lcms, na.rm=T)
 all <- classify(all, cbind(2, 1), others=NA)
 writeRaster(all, "../western_us_forest.tif", overwrite = TRUE)
 ```
+
 ```{r}
 forest <- rast("../western_us_forest.tif")
 plot(forest, axes=F, main="Western US forest cover", col="darkgreen", legend = F)
 plot(states, add=T, fill=NULL)
 rm(forest)
+invisible(gc())
+```
+
+## Subdivide forest by fire type
+
+Our identified forest regions can be subdivided by fire regime as follows:
+
+**Output:** Raster called "western_us_frg_forest.tif" with the following values:
+
+-   1: dry frequent fire forest (FRG groups I-A, I-B, and I-C))
+-   2: mixed severity fire forest (FRG groups IIIA and IIIB)
+-   3: long interval stand replacing fire forest (FRG groups IV-A and IV-B)
+-   4: long interval stand replacing fire forest (FRG groups V-A, and V-B)
+
+```{r crop-frg-rast-to-western-us}
+#| eval: FALSE
+
+#----- Load the BPS raster ---------------------------------------------------#
+frg <- rast("Z:/project_data/landfire data/LF2016_FRG_200_CONUS/Tif/LC16_FRG_200.tif")
+study_domain <- rast("../temp_rasters/study_domain.tif")
+
+#----- Crop and mask to study domain -----------------------------------------#
+frg_crop <- crop(frg, study_domain)
+frg_crop <- mask(frg_crop, study_domain)
+
+rm(frg, study_domain)
+gc()
+
+#----- Save our work here ---------------------------------------------------#
+writeRaster(frg_crop, "../temp_rasters/frg_crop.tif")
+rm(frg_crop)
+gc()
+```
+```{r create-western-us-frg-rast}
+#| eval: FALSE
+
+#-----------------------------------------------------------------------------#
+# I am going to make a raster that has FRG codes. 
+# 1 = FRG groups I-A, I-B, and I-c
+# 2 = FRG groups IIIA and IIIB
+# 3 = FRG groups IV-A and IV-B
+# 4 = FRG groups IV-A, IV-B, V-A, and V-B
+#-----------------------------------------------------------------------------#
+
+#----- Get the CSV data that has fire return interval for all BPS codes ------#
+bps <- read.csv("Z:/project_data/landfire data/LF2016_FRG_200_CONUS/CSV_Data/LF16_FRG_200.csv")
+
+frg_groups <- data.frame(frg = c("I-A", "I-B", "I-C", "III-A", "III-B",
+                                     "IV-A", "IV-B", "V-A", "V-B"),
+                         grp = c(1,1,1,2,2,3,3,4,4))
+
+#----- Filter out to units in one of our groupings ---------------------------#
+good_bps <- which(bps$FRG_NEW %in% frg_groups$frg) 
+bps <- bps[good_bps,]
+bps$grp <- frg_groups$grp[match(bps$FRG_NEW, frg_groups$frg)]
+
+#----- Replace BPS code with my FRG code, making NAs for all others ----------#
+mat <- matrix(c(bps$Value, bps$grp), nrow=nrow(bps), ncol=2)
+
+frg_crop <- rast("../temp_rasters/frg_crop.tif")
+frg <- classify(frg_crop, mat, others=NA)
+writeRaster(frg, "../temp_rasters/frg.tif")
+```
+```{r create-classified-forest-rasts}
+#| eval: false
+
+#----- Load my FRG groups, and the forest raster -----------------------------#
+frg <- rast("../temp_rasters/frg.tif")
+forest <- rast("../western_us_forest.tif")
+
+#----- Dry frequent fire forest - group 1 ------------------------------------#
+dff <- sum(frg, forest)
+dff <- dff - 1
+levels(dff) <- data.frame(ID = 1:4, 
+                  category = c("Dry frequent fire", "Mixed severity fire", 
+                 "Stand replacing group IV", "Stand replacing group V"))
+writeRaster(dff, "../western_us_frg_forest.tif", overwrite=T)
+```
+```{r}
+dff <- rast("../western_us_frg_forest.tif")
+
+plot(dff, main="Forest area categorized by fire regime",
+     axes=F)
+plot(states, add=T, fill=NULL)
+rm(dff)
 invisible(gc())
 ```
 
@@ -331,9 +423,9 @@ EVC grass cover classes:
 -   Developed - Open Space
 -   Herb cover 20-90%
 
-There are herb cover classes < 20%, but this appears to indicate a pixel that is mostly barren.
+There are herb cover classes \< 20%, but this appears to indicate a pixel that is mostly barren.
 
-LCMS forest cover class: GRASS/FORB/HERB. 
+LCMS forest cover class: GRASS/FORB/HERB.
 
 ```{r create-evc-grass-rast}
 #| eval: FALSE
@@ -370,6 +462,7 @@ rm(evc_crop)
 gc()
 writeRaster(evc, "../temp_rasters/evc_grass.tif", overwrite = TRUE)
 ```
+
 ```{r create-lcms-grass-rast}
 #| eval: false
 
@@ -377,6 +470,7 @@ lcms_crop <- rast("../temp_rasters/lcms_crop.tif")
 lcms_crop <- classify(lcms_crop, cbind(10,1), others=NA)
 writeRaster(lcms_crop, "../temp_rasters/lcms_grass.tif", overwrite = TRUE)
 ```
+
 ```{r create-western-us-grass-rast}
 #| eval: false
 evc   <- rast("../temp_rasters/evc_grass.tif")
@@ -406,14 +500,13 @@ EVC shrub cover classes:
 -   Developed-Upland Shrubland
 -   Shrub cover 20-90% (although actual values only appear up to 79%)
 
-There are shrub cover classes < 20%, but this appears to indicate a pixel that is mostly barren.
+There are shrub cover classes \< 20%, but this appears to indicate a pixel that is mostly barren.
 
 LCMS forest cover classes:
 
 -   GRASS/FORB/HERB AND SHRUBS MIX (this is at least 10% shrubs)
 -   TALL SHRUBS
 -   SHRUBS
-
 
 ```{r create-evc-shrub-rast}
 #| eval: FALSE
@@ -444,6 +537,7 @@ rm(evc_crop)
 gc()
 writeRaster(evc, "../temp_rasters/evc_shrub.tif", overwrite = TRUE)
 ```
+
 ```{r create-lcms-shrub-rast}
 #| eval: false
 
@@ -455,6 +549,7 @@ lcms_crop <- classify(lcms_crop,
   ), rep(1,3)), others=NA)
 writeRaster(lcms_crop, "../temp_rasters/lcms_shrub.tif", overwrite = TRUE)
 ```
+
 ```{r create-western-us-shrub-rast}
 #| eval: false
 evc   <- rast("../temp_rasters/evc_shrub.tif")
@@ -464,6 +559,7 @@ all <- sum(evc, lcms, na.rm=T)
 all <- classify(all, cbind(2, 1), others=NA)
 writeRaster(all, "../western_us_shrub.tif", overwrite = TRUE)
 ```
+
 ```{r}
 shrub <- rast("../western_us_shrub.tif")
 plot(shrub, axes=F, main="Western US shrub cover", col="burlywood4", legend = F)
@@ -503,6 +599,7 @@ x <- freq(lcms_out)
 x$area <- (x$count * prod(res(lcms_out)))/10000
 write.csv(x, "../LCMS coverage gaps.csv")
 ```
+
 ```{r}
 evc <- read.csv("../EVC coverage gaps.csv")
 evc$count <- NULL
@@ -537,6 +634,25 @@ From the metadata for the fire return interval product:
 The Fire Return Interval (FRI) product quantifies the average period between fires under the presumed historical fire regime. FRI is intended to describe one component of historical fire regime characteristics in the context of the broader historical time period represented by the LANDFIRE Biophysical Settings (BpS) product and BpS Model documentation. To learn more about FRI go to https://landfire.gov/fire-regime/fri. At the release of LF 2016 Remap Fire Regime Groups (FRG_NEW), Percent of Low-severity Fire (PRC_SURFAC), Percent of Mixed-severity Fire (PRC_MIXED), Percent of Replacement-severity Fire (PRC_REPLAC), and Fire Return Interval (FRI_ALLFIR) were included as attributes in the Biophysical Settings (BPS) product. Then in 2024 these products became stand-alone products once again. With the 3 Percent Severity products merged into a single product called Percent Fire Severity (PFS). These products can now be found in both places, as attributes of BPS and as their own individual products.
 
 LF 2016 Remap (LF Remap) is a comprehensive mapping effort that uses recent data to create a new base map product suite that better represents contemporary conditions. LF Remap represents circa 2016 ground conditions and is designed to produce vegetation, disturbance, and fuels products that inform wildland fire and ecological decision systems. LF Remap has improved past methodologies and processes to incorporate current satellite imagery, contemporary data sources, and the latest software and hardware technologies. Final LF Remap products offer significant improvements to all previous LF versions (read more about versions here https://www.landfire.gov/lf_schedule.php). LF Remap products are designed to facilitate national and regional level strategic fire and resource management planning and reporting of management activities. The principal purposes of the products include providing, 1) national level, landscape scale geospatial products to support fire and fuels management planning, and 2) consistent fuels products to support fire planning, analysis, and budgeting to evaluate fire management alternatives. Products are created at a 30 meter raster; however, the applicability of products varies by location and specific use. LF products were designed to support 1) national (all states) strategic planning, 2) regional (single large states or groups of smaller states), and 3) strategic/tactical planning for large sub regional landscapes and Fire Management Units (FMUs) (such as significant portions of states or multiple federal administrative entities). The applicability of LF products to support fire and land management planning on smaller areas will vary by product, location, and specific use. Managers and planners must evaluate LF products according to the scale and requirements specific to their needs.
+
+\newpage
+
+# Appendix - LANDFIRE Fire Regime Group Codes (FRG)
+
+| FRG_NEW | Fire Regime Group |
+|------------------------|------------------------------------------------|
+| I-A | Percent replacement fire less than 66.7%, fire return interval 0 to 5 years. |
+| I-B | Percent replacement fire less than 66.7%, fire return interval 6 to 15 years. |
+| I-C | Percent replacement fire less than 66.7%, fire return interval 16 to 35 years. |
+| II-A | Percent replacement fire greater than 66.7%, fire return interval 0 to 5 years. |
+| II-B | Percent replacement fire greater than 66.7%, fire return interval 6 to 15 years. |
+| II-C | Percent replacement fire greater than 66.7%, fire return interval 16 to 35 years. |
+| III-A | Percent replacement fire less than 80%, fire return interval 36 to 100 years. |
+| III-B | Percent replacement fire less than 66.7%, fire return interval 101 to 200 years. |
+| IV-A | Percent replacement fire greater than 80%, fire return interval 36 to 100 years. |
+| IV-B | Percent replacement fire greater than 66.7%, fire return interval 101 to 200 years. |
+| V-A | Any severity, fire return interval 201 to 500 years. |
+| V-B | Any severity, fire return interval 501 or more years. |
 
 \newpage
 
@@ -628,7 +744,7 @@ This is based on the National Land Cover Database (NLCD), and looks to be curren
 
 My first raster products were clipped to the 100th line of longitude instead of to the study domain. There is an email note where this is referenced.
 
-The current vegetation class definitions were the result of some trial and error, and comparison with other vegetation products. Vegetation class definitions were initially based on Landfire EVC, and we elected to keep that basis. 
+The current vegetation class definitions were the result of some trial and error, and comparison with other vegetation products. Vegetation class definitions were initially based on Landfire EVC, and we elected to keep that basis.
 
 ## For forest:
 
@@ -647,7 +763,7 @@ From the LANDFIRE technical documentation:
 
 > NLCD class 21 (developed open space) was made “burnable” by splitting it into five “burnable urban” classes that capture the variety of lifeform (herb, shrub, tree) and leaf form (deciduous, evergreen, mixed) across the open space designation\[...\].
 
-Based on this, I proposed a definition of "forest cover" as the three developed forest classes, plus those areas where tree cover is greater than 50%. 
+Based on this, I proposed a definition of "forest cover" as the three developed forest classes, plus those areas where tree cover is greater than 50%.
 
 ### Comparing this forest coverage to other forest coverage
 
@@ -693,7 +809,6 @@ plot(states, add=T, fill=NULL)
 rm(lcpri)
 invisible(gc())
 ```
-
 
 ```{r}
 #-----------------------------------------------------------------------------#
@@ -741,7 +856,6 @@ plot(states, add=T, fill=NULL)
 ```
 
 This implies that our definition of "forest" is quite a bit stricter than the one used by Jennifer Balch. So let's see if we can see how to align them (whether or not we decide to actually do so). Let's say that all tree cover $\geq$ 20% is forest.
-
 
 ```{r create-looser-evc-forest-rast}
 #| eval: FALSE
@@ -859,8 +973,6 @@ Compare with LCMS. Again, we have a lot of mixed classes that may or may not cou
 
 Other possibilities that I am omitting in this version: TALL SHRUBS AND TREES MIX, SHRUBS AND TREES MIX, BARREN AND SHRUBS MIX
 
-
-
 ```{r}
 #| results: asis
 
@@ -927,7 +1039,7 @@ fri_crop <- crop(fri, west_us)
 
 > Moore program officers wanted us to calculate a 30 m fire deficit/fire surplus product for western US forests. I don't think that's possible for all western forests. But I do think think its possible to do 2 things.
 
-> 1.  calculate fire deficit and surplus for all counties and level 3 ecoregions in CONUS and Alaska and then calculate fire deficit at a 30-m resolution where the historical fire return interval is = or < the length of the observed record for fire 1984-2024.
+> 1.  calculate fire deficit and surplus for all counties and level 3 ecoregions in CONUS and Alaska and then calculate fire deficit at a 30-m resolution where the historical fire return interval is = or \< the length of the observed record for fire 1984-2024.
 
 > To start looking at this, we need the following things.
 
@@ -937,53 +1049,42 @@ fri_crop <- crop(fri, west_us)
 
 > 3.  Find the best more comprehensive record possible of fire perimeters for 1984-2024. This step will take longer but Mahsa and Jaz are both thinking about it. So we could group up on that piece!
 
-
 ### From Winslow, via Slack, 1/25/2025, in response to first drafts of forest and FRI rasters:
 
-> Hi Lora, Thanks so much for sharing this. Really nice. Now that you have all fire perimeters, I think we are ready to move forward. So heres what I think the next steps are: 
+> Hi Lora, \[...\] Now that you have all fire perimeters, I think we are ready to move forward. So heres what I think the next steps are:
 
-> 1. Take a look at the spatial distribution of fires on the eastern side. I think you may have too much of the great prairies included. We could use the DYNAFFOREST study area raster (I can give it to you) to limit our geographic domain.
+> 1.  Take a look at the spatial distribution of fires on the eastern side. I think you may have too much of the great prairies included. We could use the DYNAFFOREST study area raster (I can give it to you) to limit our geographic domain.
 
-> 2. I like your definition of forest. I'd also like to compare it to the two forest products used by Jennifer Balch's team in the good fire analysis. Mahsa has those. 
+> 2.  I like your definition of forest. I'd also like to compare it to the two forest products used by Jennifer Balch's team in the good fire analysis. Mahsa has those.
 
-> 3. We need to classify where in the study area is grassland and where is shrubland/chapperal.
+> 3.  We need to classify where in the study area is grassland and where is shrubland/chapperal.
 
-> 4. For all places where the landfire FRI is less than 40 years, we next produce a map of fire deficit and surplus by calculating the number of times each cell burned in the observational record, and dividing by its landfire historcal record. on the deficit side and surplus sides it will be a conservative estimate.
+> 4.  For all places where the landfire FRI is less than 40 years, we next produce a map of fire deficit and surplus by calculating the number of times each cell burned in the observational record, and dividing by its landfire historcal record. on the deficit side and surplus sides it will be a conservative estimate.
 
-> 5. Then we need to know what the deficit vs surplus is for forests with longer FRIs than the observed record. We can't do that at the pixel scale cuz we need to use space for time substitution. So at the level 3 ecoregion level we calculate the fire rotation by veg type (forest, grassland, shrub) the historical fire rotation is the mean fire return interval. The observed fire rotation is calculated as we calculated fire rotation periods (FRPs), defined as the time it takes to burn an area equal in size to the study area:
- t/∑ai/A
- , where t is the time period evaluated, ai is annual area burned in year i, and A is the size of the study area.
+> 5.  Then we need to know what the deficit vs surplus is for forests with longer FRIs than the observed record. We can't do that at the pixel scale cuz we need to use space for time substitution. So at the level 3 ecoregion level we calculate the fire rotation by veg type (forest, grassland, shrub) the historical fire rotation is the mean fire return interval. The observed fire rotation is calculated as we calculated fire rotation periods (FRPs), defined as the time it takes to burn an area equal in size to the study area: t/∑ai/A , where t is the time period evaluated, ai is annual area burned in year i, and A is the size of the study area.
 
 > It is from this paper: https://iopscience.iop.org/article/10.1088/1748-9326/acee16/meta
 
-> Bonus: I also want to know how much of the western US forests and shrublands (including Alaska) was historically in a long interval stand replacing fire regime vs low severity frequent fire regime.  To do so use the landfire fire regime group (frg_new) IIIA, IvA and IVB (stand replacing) vs IA-IC (frequent fire low severity) from this dataset: https://landfire.gov/fire-regime/frg
+> Bonus: I also want to know how much of the western US forests and shrublands (including Alaska) was historically in a long interval stand replacing fire regime vs low severity frequent fire regime. To do so use the landfire fire regime group (frg_new) IIIA, IvA and IVB (stand replacing) vs IA-IC (frequent fire low severity) from this dataset: https://landfire.gov/fire-regime/frg
 
 ### From Winslow, email, 2/11/2025, in response to multi-product forest comparison and first drafts of grass and shrub rasters:
 
-> A few comments here:
-> \[...\] I'm supportive of your classification strategies for veg type. 
+> A few comments here: \[...\] I'm supportive of your classification strategies for veg type.
 
-> I think moving forward, given that our Landfire based classification and LCMS are more conservative in general than the LCPRI, We should do the classification as follows: drop LCPRI. If LCMS and our Landfire based classification agree that a pixel is a given veg type, it is that veg type, drop pixels with disagreement. 
+> I think moving forward, given that our Landfire based classification and LCMS are more conservative in general than the LCPRI, We should do the classification as follows: drop LCPRI. If LCMS and our Landfire based classification agree that a pixel is a given veg type, it is that veg type, drop pixels with disagreement.
 
-> Once you create the final grassland, shrubland, forest raster layers, could you please:
-Further break forest into dry frequent fire forests, mixed severity fire forest, and long interval stand replacing fire forests by using the following groupings 
-This can be accomplished using the FRG_New variable in the BPS table. 
-Dry frequent fire forests would be group 1 A-1C
-Mixed severity fire regimes would be group IIIA-IIIB
-Long interval stand replacing fire forests: IVA-IVB and potentiallly with VA and VB. I want to see how this looks including only the group IV categories alone and when IV and V categories are grouped together.
-Once I look at those maps, we can make adjustments. Then I'd like you to send the grassland, shrubland, dry frequent fire forests, mixed severity forests, and high severity forest rasters to Mahsa and Crystal for another paper we are working on.
+> Once you create the final grassland, shrubland, forest raster layers, could you please: Further break forest into dry frequent fire forests, mixed severity fire forest, and long interval stand replacing fire forests by using the following groupings This can be accomplished using the FRG_New variable in the BPS table. Dry frequent fire forests would be group 1 A-1C Mixed severity fire regimes would be group IIIA-IIIB Long interval stand replacing fire forests: IVA-IVB and potentiallly with VA and VB. I want to see how this looks including only the group IV categories alone and when IV and V categories are grouped together. Once I look at those maps, we can make adjustments. Then I'd like you to send the grassland, shrubland, dry frequent fire forests, mixed severity forests, and high severity forest rasters to Mahsa and Crystal for another paper we are working on.
 
-> Then we can keep on keeping on calculating deficit and suprlus as previously discussed. 
+> Then we can keep on keeping on calculating deficit and suprlus as previously discussed.
 
 ### And also, same day:
 
 > I'm also thinking about analyses we could do with the pixel level fire deficit info for frequent fire forests once estimates of fire deficit/surplus are produced
 
-> 1. We could calculate trends in the area in different fire deficits over the observational period
+> 1.  We could calculate trends in the area in different fire deficits over the observational period
 
-> 2. We could quantify the drivers of fire deficit/surplus in frequent fire forests as a function of climate (temp/precip/vpd normals), topography (slope, aspect), and human factors (distance to road, urban centers), vegetation type (three relevant classes; grassland/shrubland/frequent fire forests)
+> 2.  We could quantify the drivers of fire deficit/surplus in frequent fire forests as a function of climate (temp/precip/vpd normals), topography (slope, aspect), and human factors (distance to road, urban centers), vegetation type (three relevant classes; grassland/shrubland/frequent fire forests)
 
 > open to additional ideas
 
-> Then at the ecoregion III level that includes all forest types, 
-> we could run DYNAFFOREST to compare during the observational period and run the model into the future to determine when different ecoregions cross the threshold from deficit to surplus. 
+> Then at the ecoregion III level that includes all forest types, we could run DYNAFFOREST to compare during the observational period and run the model into the future to determine when different ecoregions cross the threshold from deficit to surplus.
