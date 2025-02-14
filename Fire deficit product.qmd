@@ -5,6 +5,8 @@ format: pdf
 editor: source
 author: Lora Murphy
 date: today
+output-dir: ".." # This doesn't work
+output-file: "Fire deficit product"
 ---
 
 ```{r setup, include=FALSE}
@@ -58,7 +60,7 @@ study_domain <- project(study_domain, fri)
 study_domain <- classify(study_domain, cbind(0, NA))
 # Trim off surrounding NA to re-set the extent
 study_domain <- trim(study_domain)
-writeRaster(study_domain, "study_domain.tif")
+writeRaster(study_domain, "../temp_rasters/study_domain.tif")
 
 #----- Crop and mask study domain --------------------------------------------#
 fri_crop <- crop(fri, study_domain)
@@ -68,7 +70,7 @@ rm(fri, study_domain)
 gc()
 
 #----- Save our work here ---------------------------------------------------#
-writeRaster(fri_crop, "fri_crop.tif")
+writeRaster(fri_crop, "../temp_rasters/fri_crop.tif")
 rm(fri_crop)
 gc()
 ```
@@ -91,10 +93,10 @@ mat <- matrix(c(bps$Value[good_bps], bps$FRI_ALLFIR[good_bps]),
 # even on the big machines. We're going to split it up into tiles.
 #-----------------------------------------------------------------------------#
 #----- Make a directory to put the files into --------------------------------#
-if (!dir.exists("tempproc")) dir.create("tempproc")
+if (!dir.exists("../tempproc")) dir.create("../tempproc")
 
 #----- Divide the raster into tiles for processing ---------------------------#
-fri_crop <- rast("fri_crop.tif")
+fri_crop <- rast("../temp_rasters/fri_crop.tif")
 tile_size <- c(10000, 10000)  # Size of each tile (rows, columns)
 tiles <- makeTiles(fri_crop, tile_size, filename = "tempproc/tile.tif", 
                    overwrite = TRUE)
@@ -116,12 +118,12 @@ gc()
 
 
 #----- Mosaic the processed tiles back together ------------------------------#
-processed_tiles <- paste0("tempproc/",
-                          list.files("tempproc", pattern="processed"))
+processed_tiles <- paste0("../tempproc/",
+                          list.files("../tempproc", pattern="processed"))
 processed_rasters <- lapply(processed_tiles, rast)
 mosaic <- do.call(terra::mosaic, processed_rasters)
 
-writeRaster(mosaic, "west_us_FRI.tif", overwrite = TRUE)
+writeRaster(mosaic, "../west_us_FRI.tif", overwrite = TRUE)
 ```
 ```{r create-alaska-fri-rast}
 #| eval: FALSE
@@ -140,12 +142,12 @@ akfri <- rast("Z:/project_data/landfire data/LF2023_FRI_240_AK/Tif/LA23_FRI_240.
 #| results: false
 #| message: false
 
-fri <- rast("west_us_FRI.tif")
+fri <- rast("../west_us_FRI.tif")
 
 # This used to use the tigris package, but one day the data wasn't available on
 # line and the code broke. So I downloaded a shapefile instead
 #states <- states(cb=TRUE)
-states <- vect("Data/s_05mr24.shp")
+states <- vect("../Data/s_05mr24.shp")
 states <- project(states, fri)
 states <- crop(states, fri)
 plot(fri, axes=F,
@@ -176,7 +178,7 @@ where $N_{fire}$ is the number of times each cell has burned in the 1984-2024 pe
 fire_perimeters <- vect("Z:/Mahsa_GF_data/goodfire_data_jan25/goodfire_1985to2024_f1jan25.shp")
 
 #----- Fire return interval --------------------------------------------------#
-fri <- rast("west_us_FRI.tif")
+fri <- rast("../west_us_FRI.tif")
 
 fire_perimeters <- terra::project(fire_perimeters, fri)
 
@@ -185,18 +187,18 @@ num_burns <- rast(fri)
 
 # Rasterize using function to count overlapping polygons
 r_count <- rasterize(fire_perimeters, num_burns, fun="count", background = 0)
-writeRaster(r_count, "num_fires.tif")
+writeRaster(r_count, "../temp_rasters/num_fires.tif")
 ```
 ```{r create-fire-deficit-raster}
 #| eval: false
-nfire <- rast("num_fires.tif")
-fri <- rast("west_us_FRI.tif")
+nfire <- rast("../temp_rasters/num_fires.tif")
+fri <- rast("../west_us_FRI.tif")
 
 def <- nfire / (40/fri)
-writeRaster(def, "western_us_fire_deficit.tif")
+writeRaster(def, "../western_us_fire_deficit.tif")
 ```
 ```{r}
-def <- rast("western_us_fire_deficit.tif")
+def <- rast("../western_us_fire_deficit.tif")
 
 # This doesn't work - error: long vectors not supported yet
 #library(tidyterra)
@@ -237,7 +239,7 @@ LCMS forest cover class: TREES.
 
 #----- Load the BPS raster ---------------------------------------------------#
 evc <- rast("Z:/project_data/landfire data/LF2016_EVC_200_CONUS/Tif/LC16_EVC_200.tif")
-study_domain <- rast("study_domain.tif")
+study_domain <- rast("../temp_rasters/study_domain.tif")
 
 #----- Crop and mask study domain --------------------------------------------#
 evc_crop <- crop(evc, study_domain)
@@ -247,7 +249,7 @@ rm(evc)
 gc()
 
 #----- Save our work here ----------------------------------------------------#
-writeRaster(evc_crop, "evc_crop.tif")
+writeRaster(evc_crop, "../temp_rasters/evc_crop.tif")
 rm(evc_crop)
 gc()
 ```
@@ -255,7 +257,7 @@ gc()
 #| eval: false
 lcms <- rast("Data/Balch forest cover/Land_cover_2016/LCMS_CONUS_v2023-9_Land_Cover_2016.tif")
 
-study_domain <- rast("study_domain.tif")
+study_domain <- rast("../temp_rasters/study_domain.tif")
 
 #----- Crop and mask to study domain - CRS is compatible ---------------------#
 lcms_crop <- crop(lcms, study_domain)
@@ -263,7 +265,7 @@ lcms_crop <- mask(lcms_crop, study_domain)
 rm(lcms)
 invisible(gc())
 
-writeRaster(lcms_crop, "lcms_crop.tif")
+writeRaster(lcms_crop, "../temp_rasters/lcms_crop.tif")
 ```
 ```{r create-evc-western-us-forest-rast}
 #| eval: FALSE
@@ -286,29 +288,29 @@ good_codes <- c(good_codes, grep("Tree Cover >= 99.*", evc_codes$CLASSNAMES))
 mat <- matrix(c(evc_codes$VALUE[good_codes], rep(1, length(good_codes))), 
               nrow=length(good_codes), ncol=2)
 
-evc_crop <- rast("evc_crop.tif")
+evc_crop <- rast("../temp_rasters/evc_crop.tif")
 evc <- classify(evc_crop, mat, others=NA)
 rm(evc_crop)
 gc()
-writeRaster(evc, "evc_forest.tif", overwrite = TRUE)
+writeRaster(evc, "../temp_rasters/evc_forest.tif", overwrite = TRUE)
 ```
 ```{r create-lcms-western-us-forest-rast}
 #| eval: false
-lcms_crop <- rast("lcms_crop.tif")
+lcms_crop <- rast("../temp_rasters/lcms_crop.tif")
 lcms_crop <- classify(lcms_crop, cbind(1,1), others=NA)
-writeRaster(lcms_crop, "lcms_forest.tif", overwrite = TRUE)
+writeRaster(lcms_crop, "../temp_rasters/lcms_forest.tif", overwrite = TRUE)
 ```
 ```{r create-western-us-forest-rast}
 #| eval: false
-evc   <- rast("evc_forest.tif")
-lcms  <- rast("lcms_forest.tif")
+evc   <- rast("../temp_rasters/evc_forest.tif")
+lcms  <- rast("../temp_rasters/lcms_forest.tif")
 
 all <- sum(evc, lcms, na.rm=T)
 all <- classify(all, cbind(2, 1), others=NA)
-writeRaster(all, "western_us_forest.tif", overwrite = TRUE)
+writeRaster(all, "../western_us_forest.tif", overwrite = TRUE)
 ```
 ```{r}
-forest <- rast("western_us_forest.tif")
+forest <- rast("../western_us_forest.tif")
 plot(forest, axes=F, main="Western US forest cover", col="darkgreen", legend = F)
 plot(states, add=T, fill=NULL)
 rm(forest)
@@ -362,31 +364,31 @@ good_codes <- c(good_codes, grep("Herb Cover >.*", evc_codes$CLASSNAMES))
 mat <- matrix(c(evc_codes$VALUE[good_codes], rep(1, length(good_codes))), 
               nrow=length(good_codes), ncol=2)
 
-evc_crop <- rast("evc_crop.tif")
+evc_crop <- rast("../temp_rasters/evc_crop.tif")
 evc <- classify(evc_crop, mat, others=NA)
 rm(evc_crop)
 gc()
-writeRaster(evc, "evc_grass.tif", overwrite = TRUE)
+writeRaster(evc, "../temp_rasters/evc_grass.tif", overwrite = TRUE)
 ```
 ```{r create-lcms-grass-rast}
 #| eval: false
 
-lcms_crop <- rast("lcms_crop.tif")
+lcms_crop <- rast("../temp_rasters/lcms_crop.tif")
 lcms_crop <- classify(lcms_crop, cbind(10,1), others=NA)
-writeRaster(lcms_crop, "lcms_grass.tif", overwrite = TRUE)
+writeRaster(lcms_crop, "../temp_rasters/lcms_grass.tif", overwrite = TRUE)
 ```
 ```{r create-western-us-grass-rast}
 #| eval: false
-evc   <- rast("evc_grass.tif")
-lcms  <- rast("lcms_grass.tif")
+evc   <- rast("../temp_rasters/evc_grass.tif")
+lcms  <- rast("../temp_rasters/lcms_grass.tif")
 
 all <- sum(evc, lcms, na.rm=T)
 all <- classify(all, cbind(2, 1), others=NA)
-writeRaster(all, "western_us_grass.tif", overwrite = TRUE)
+writeRaster(all, "../western_us_grass.tif", overwrite = TRUE)
 ```
 
 ```{r}
-grass <- rast("western_us_grass.tif")
+grass <- rast("../western_us_grass.tif")
 plot(grass, axes=F, main="Western US grass cover", col="darkgoldenrod3", legend = F)
 plot(states, add=T, fill=NULL)
 rm(grass)
@@ -436,34 +438,34 @@ good_codes <- c(good_codes, grep("Shrub Cover >.*", evc_codes$CLASSNAMES))
 mat <- matrix(c(evc_codes$VALUE[good_codes], rep(1, length(good_codes))), 
               nrow=length(good_codes), ncol=2)
 
-evc_crop <- rast("evc_crop.tif")
+evc_crop <- rast("../temp_rasters/evc_crop.tif")
 evc <- classify(evc_crop, mat, others=NA)
 rm(evc_crop)
 gc()
-writeRaster(evc, "evc_shrub.tif", overwrite = TRUE)
+writeRaster(evc, "../temp_rasters/evc_shrub.tif", overwrite = TRUE)
 ```
 ```{r create-lcms-shrub-rast}
 #| eval: false
 
-lcms_crop <- rast("lcms_crop.tif")
+lcms_crop <- rast("../temp_rasters/lcms_crop.tif")
 lcms_crop <- classify(lcms_crop, 
       cbind(c(8, # GRASS/FORB/HERB AND SHRUBS MIX
               6, # TALL SHRUBS
               7 # SHRUBS
   ), rep(1,3)), others=NA)
-writeRaster(lcms_crop, "lcms_shrub.tif", overwrite = TRUE)
+writeRaster(lcms_crop, "../temp_rasters/lcms_shrub.tif", overwrite = TRUE)
 ```
 ```{r create-western-us-shrub-rast}
 #| eval: false
-evc   <- rast("evc_shrub.tif")
-lcms  <- rast("lcms_shrub.tif")
+evc   <- rast("../temp_rasters/evc_shrub.tif")
+lcms  <- rast("../temp_rasters/lcms_shrub.tif")
 
 all <- sum(evc, lcms, na.rm=T)
 all <- classify(all, cbind(2, 1), others=NA)
-writeRaster(all, "western_us_shrub.tif", overwrite = TRUE)
+writeRaster(all, "../western_us_shrub.tif", overwrite = TRUE)
 ```
 ```{r}
-shrub <- rast("western_us_shrub.tif")
+shrub <- rast("../western_us_shrub.tif")
 plot(shrub, axes=F, main="Western US shrub cover", col="burlywood4", legend = F)
 plot(states, add=T, fill=NULL)
 rm(shrub)
@@ -477,39 +479,39 @@ For our main cover products, EVC and LCMS, what are the cover classes of those p
 ```{r id-veg-gaps}
 #| eval: false
 
-forest <- rast("western_us_forest.tif")
-grass  <- rast("western_us_grass.tif")
-shrub  <- rast("western_us_shrub.tif")
+forest <- rast("../western_us_forest.tif")
+grass  <- rast("../western_us_grass.tif")
+shrub  <- rast("../western_us_shrub.tif")
 
 all <- sum(forest, grass, shrub, na.rm=T)
 rm(forest, grass, shrub)
 
-evc <- rast("evc_crop.tif")
+evc <- rast("../temp_rasters/evc_crop.tif")
 evc_out <- mask(evc, all, inverse=T)
-writeRaster(evc_out, "evc_excluded.tif")
+writeRaster(evc_out, "../temp_rasters/evc_excluded.tif")
 
 x <- freq(evc_out)
 x$area <- (x$count * prod(res(evc_out)))/10000
-write.csv(x, "EVC coverage gaps.csv")
+write.csv(x, "../EVC coverage gaps.csv")
 rm(evc_out, evc)
 
-lcms <- rast("lcms_crop.tif")
+lcms <- rast("../temp_rasters/lcms_crop.tif")
 lcms_out <- mask(lcms, all, inverse=T)
-writeRaster(lcms_out, "lcms_excluded.tif")
+writeRaster(lcms_out, "../temp_rasters/lcms_excluded.tif")
 
 x <- freq(lcms_out)
 x$area <- (x$count * prod(res(lcms_out)))/10000
-write.csv(x, "LCMS coverage gaps.csv")
+write.csv(x, "../LCMS coverage gaps.csv")
 ```
 ```{r}
-evc <- read.csv("EVC coverage gaps.csv")
+evc <- read.csv("../EVC coverage gaps.csv")
 evc$count <- NULL
 evc$X <- NULL
 evc$layer <- NULL
 evc$area <- prettyNum(round(evc$area, 0), big.mark=",")
 knitr::kable(evc, row.names = F, col.names = c("EVC cover type", "Area (ha)"))
 
-lcms <- read.csv("LCMS coverage gaps.csv")
+lcms <- read.csv("../LCMS coverage gaps.csv")
 lcms$count <- NULL
 lcms$X <- NULL
 lcms$layer <- NULL
@@ -659,25 +661,25 @@ Let's compare 2016 data for these two products to ours.
 
 ```{r crop-lcpri-rast-to-western-us}
 #| eval: false
-lcpri <- rast("Data/Balch forest cover/LCMAP_CU_2016_V13_LCPRI.tif")
-study_domain <- rast("study_domain.tif")
+lcpri <- rast("../Data/Balch forest cover/LCMAP_CU_2016_V13_LCPRI.tif")
+study_domain <- rast("../temp_rasters/study_domain.tif")
 lcpri_crop <- crop(lcpri, study_domain)
 lcpri_crop <- mask(lcpri_crop, study_domain)
 rm(lcpri)
 invisible(gc())
 
-writeRaster(lcpri_crop, "lcpri_crop.tif")
+writeRaster(lcpri_crop, "../temp_rasters/lcpri_crop.tif")
 ```
 
 ```{r create-lcpri-western-us-forest-rast}
 #| eval: false
-lcpri_crop <- rast("lcpri_crop.tif")
+lcpri_crop <- rast("../temp_rasters/lcpri_crop.tif")
 lcpri_crop <- classify(lcpri_crop, cbind(4,1), others=NA)
-writeRaster(lcpri_crop, "lcpri_forest.tif")
+writeRaster(lcpri_crop, "../temp_rasters/lcpri_forest.tif")
 ```
 
 ```{r results='asis'}
-lcms <- rast("lcms_forest.tif")
+lcms <- rast("../temp_rasters/lcms_forest.tif")
 plot(lcms, axes=F, main="LCMS forest cover", col="darkgreen", legend = F)
 plot(states, add=T, fill=NULL)
 rm(lcms)
@@ -685,7 +687,7 @@ invisible(gc())
 
 cat("\n\n")
 
-lcpri <- rast("lcpri_forest.tif")
+lcpri <- rast("../temp_rasters/lcpri_forest.tif")
 plot(lcpri, axes=F, main="LCPRI forest cover", col="darkgreen", legend = F)
 plot(states, add=T, fill=NULL)
 rm(lcpri)
@@ -724,16 +726,16 @@ knitr::kable(
 
 ```{r create-three-way-forest-comparison}
 #| eval: false
-evc   <- rast("evc_forest.tif")
-lcms  <- rast("lcms_forest.tif")
-lcpri <- rast("lcpri_forest.tif")
+evc   <- rast("../temp_rasters/evc_forest.tif")
+lcms  <- rast("../temp_rasters/lcms_forest.tif")
+lcpri <- rast("../temp_rasters/lcpri_forest.tif")
 
 all <- sum(evc, lcms, lcpri, na.rm=T)
-writeRaster(all, "forest_tally.tif")
+writeRaster(all, "../temp_rasters/forest_tally.tif")
 ```
 
 ```{r}
-all <- rast("forest_tally.tif")
+all <- rast("../temp_rasters/forest_tally.tif")
 plot(all, axes=F, main="How many products say this place is forest?")
 plot(states, add=T, fill=NULL)
 ```
@@ -763,15 +765,15 @@ good_codes <- c(good_codes)
 mat <- matrix(c(evc_codes$VALUE[good_codes], rep(1, length(good_codes))), 
               nrow=length(good_codes), ncol=2)
 
-evc_crop <- rast("evc_crop.tif")
+evc_crop <- rast("../temp_rasters/evc_crop.tif")
 evc <- classify(evc_crop, mat, others=NA)
 rm(evc_crop)
 gc()
-writeRaster(evc, "evc_forest_loose.tif", overwrite = TRUE)
+writeRaster(evc, "../temp_rasters/evc_forest_loose.tif", overwrite = TRUE)
 ```
 
 ```{r}
-evc <- rast("evc_forest_loose.tif")
+evc <- rast("../temp_rasters/evc_forest_loose.tif")
 #x <- freq(evc)
 #evc_forest_area <- (x$count * prod(res(evc)))/10000
 evc_forest_area <- 73571515
@@ -807,7 +809,7 @@ LCPRI has one "Cropland" and one "Grass/Shrub" cover class. Since this does not 
 ```{r}
 #| results: asis
 
-evc <- rast("evc_grass.tif")
+evc <- rast("../temp_rasters/evc_grass.tif")
 #x <- freq(evc)
 #evc_grass_area <- (x$count * prod(res(evc)))/10000
 #evc_grass_area <- 78078768 with crops
@@ -821,7 +823,7 @@ invisible(gc())
 
 cat("\n\n")
 
-lcms <- rast("lcms_grass.tif")
+lcms <- rast("../temp_rasters/lcms_grass.tif")
 x <- freq(lcms)
 lcms_grass_area <- (x$count * prod(res(lcms)))/10000
 #lcms_grass_area <- 160156968 with GRASS/FORB/HERB AND SHRUBS MIX
@@ -862,7 +864,7 @@ Other possibilities that I am omitting in this version: TALL SHRUBS AND TREES MI
 ```{r}
 #| results: asis
 
-evc <- rast("evc_shrub.tif")
+evc <- rast("../temp_rasters/evc_shrub.tif")
 #x <- freq(evc)
 #evc_shrub_area <- (x$count * prod(res(evc)))/10000
 evc_shrub_area <- 123684737
@@ -875,7 +877,7 @@ invisible(gc())
 
 cat("\n\n")
 
-lcms <- rast("lcms_shrub.tif")
+lcms <- rast("../temp_rasters/lcms_shrub.tif")
 #x <- freq(lcms)
 #lcms_shrub_area <- (x$count * prod(res(lcms)))/10000
 lcms_shrub_area <- 104228761
