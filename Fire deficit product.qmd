@@ -15,6 +15,7 @@ library(sf)
 library(kableExtra)
 library(ggplot2)
 library(exactextractr)
+library(tidyverse)
 knitr::opts_chunk$set(echo = FALSE)
 knitr::opts_chunk$set(messages = FALSE)
 knitr::opts_chunk$set(warnings = FALSE)
@@ -615,10 +616,27 @@ write.csv(x, "../LCMS coverage gaps.csv")
 ```
 
 ```{r}
+evc_out <- rast("../temp_rasters/evc_excluded.tif")
+plot(evc_out, axes=F, legend=F, main="Landfire EVC not in an existing raster")
+
 evc <- read.csv("../EVC coverage gaps.csv")
 evc$count <- NULL
 evc$X <- NULL
 evc$layer <- NULL
+
+# Condense some layers
+for (cov in c("Tree Cover", "Herb Cover", "Shrub Cover")) {
+  for (perc in 1:9) {
+    x <- grep(paste0(cov, " = ", perc, ".*"), evc$value)
+    if (length(x) > 0) {
+    area = sum(evc$area[x])
+    evc <- evc[-x,]
+    evc <- rbind(evc, data.frame(value = paste0(cov, " ", perc, "1-",
+                                                perc,"9%"),
+                                 area = area))
+    }
+  }
+}
 evc$area <- prettyNum(round(evc$area, 0), big.mark=",")
 knitr::kable(evc, row.names = F, col.names = c("EVC cover type", "Area (ha)"))
 
@@ -636,15 +654,15 @@ knitr::kable(lcms, row.names = F, col.names = c("LCMS cover type", "Area (ha)"))
 
 Method from [Clark-Wolf et al 2023](https://iopscience.iop.org/article/10.1088/1748-9326/acee16/meta)
 
-Winslow says:
-
-> Then we need to know what the deficit vs surplus is for forests with longer FRIs than the observed record. We can't do that at the pixel scale cuz we need to use space for time substitution. So at the level 3 ecoregion level we calculate the fire rotation by veg type (forest, grassland, shrub) the historical fire rotation is the mean fire return interval. The observed fire rotation is calculated as we calculated fire rotation periods (FRPs), defined as the time it takes to burn an area equal in size to the study area: 
+This uses a space-for-time substition to calculate a fire rotation period (FRP), defined as the time it takes to burn an area equal in size to the study area.
 
 $$FRP = \frac{t}{\sum a_i / A} $$
 
 where *t* is the time period evaluated, $a_i$ is annual area burned in year *i*, and *A* is the size of the study area.
 
-In this case, I assume the area of the "study area" is the area of the vegetation type, within the ecoregion, within those areas where FRI > 40 years. So this will be significantly smaller than the ecoregion as a whole.
+**Need a double check here to make sure I've understood this right:** When considering the area *A* and the burned areas $a_i$, I am only considering pixels within the subsetted areas: within the ecoregion, within those areas where FRI > 40 years, within the vegetation type in question.
+
+Here are ecoregion-level tables of FRG; spatial products can follow.
 
 ```{r create-western-us-longfri-rast}
 #| eval: FALSE
@@ -785,18 +803,52 @@ gc()
 ```
 
 ```{r calc-area-burned-by-eco-veg}
-#| eval: FALSE
 
 #-----------------------------------------------------------------------------#
-# The thing I have to do here is calculate the amount of area that each fire 
-# burned, that falls within our domain of ecoregion + veg type. I can do this
-# with the number of fires raster: it shows how many times each pixel has 
-# burned.
+# Do the FRP calculations by ecoregion. Note that there might be duplicates
+# for an ecoregion, as polygons might have been discontinuous
 #-----------------------------------------------------------------------------#
+forest_dat <- read.csv("../forest_cells_by_ecoregion_long_FRI.csv")
 
+dat <- forest_dat %>% group_by(Name) %>% 
+  summarise(Area = sum(Total_Area), Burned = sum(Area_Burned)) %>%
+  filter(Area > 0) %>%
+  mutate(FRG = if_else(Burned > 0, 40/(Burned/Area), NA)) %>%
+  mutate(Area = (Area * prod(res(fri)))/10000,
+         Burned = (Burned * prod(res(fri)))/10000)
 
+knitr::kable(dat, col.names = c("Level 3 Ecoregion", 
+                                "Forest Area (ha)", 
+                                "Forest Area Burned in 40 years (ha)",
+                                "FRG"), digits=1)
 
+grass_dat <- read.csv("../grass_cells_by_ecoregion_long_FRI.csv")
 
+dat <- grass_dat %>% group_by(Name) %>% 
+  summarise(Area = sum(Total_Area), Burned = sum(Area_Burned)) %>%
+  filter(Area > 0) %>%
+  mutate(FRG = if_else(Burned > 0, 40/(Burned/Area), NA)) %>%
+  mutate(Area = (Area * prod(res(fri)))/10000,
+         Burned = (Burned * prod(res(fri)))/10000)
+
+knitr::kable(dat, col.names = c("Level 3 Ecoregion", 
+                                "Grass Area (ha)", 
+                                "Grass Area Burned in 40 years (ha)",
+                                "FRG"), digits=1)
+
+shrub_dat <- read.csv("../shrub_cells_by_ecoregion_long_FRI.csv")
+
+dat <- shrub_dat %>% group_by(Name) %>% 
+  summarise(Area = sum(Total_Area), Burned = sum(Area_Burned)) %>%
+  filter(Area > 0) %>%
+  mutate(FRG = if_else(Burned > 0, 40/(Burned/Area), NA)) %>%
+  mutate(Area = (Area * prod(res(fri)))/10000,
+         Burned = (Burned * prod(res(fri)))/10000)
+
+knitr::kable(dat, col.names = c("Level 3 Ecoregion", 
+                                "Shrub Area (ha)", 
+                                "Shrub Area Burned in 40 years (ha)",
+                                "FRG"), digits=1)
 ```
 
 \newpage
