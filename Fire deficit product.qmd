@@ -14,6 +14,7 @@ library(terra)
 library(sf)
 library(kableExtra)
 library(ggplot2)
+library(exactextractr)
 knitr::opts_chunk$set(echo = FALSE)
 knitr::opts_chunk$set(messages = FALSE)
 knitr::opts_chunk$set(warnings = FALSE)
@@ -75,6 +76,15 @@ gc()
 
 ```{r create-western-us-fri-rast}
 #| eval: FALSE
+
+#-----------------------------------------------------------------------------#
+# Note that this uses a tiled approach, because I had a lot of crashes trying
+# to get this to work. An updated version of terra worked much better and no
+# longer requires tiles. I am leaving this in as a legacy, in case it is useful
+# later; but you can go straight to the classify step if desired.
+#-----------------------------------------------------------------------------#
+
+
 #----- Get the CSV data that has fire return interval for all BPS codes ------#
 bps <- read.csv("Z:/project_data/landfire data/LF2016_FRI_200_CONUS/CSV_Data/LF16_FRI_200.csv")
 
@@ -158,7 +168,7 @@ plot(states, add=T, fill=NULL)
 
 \newpage
 
-# Fire deficit / surplus
+# Fire deficit / surplus for FRI $\leq$ 40 years
 
 **Output:** raster called "western_us_fire_deficit.tif". The value in each raster is:
 
@@ -334,6 +344,8 @@ Our identified forest regions can be subdivided by fire regime as follows:
 -   2: mixed severity fire forest (FRG groups IIIA and IIIB)
 -   3: long interval stand replacing fire forest (FRG groups IV-A and IV-B)
 -   4: long interval stand replacing fire forest (FRG groups V-A, and V-B)
+
+(See appendix for a complete list of FRG codes.)
 
 ```{r crop-frg-rast-to-western-us}
 #| eval: FALSE
@@ -572,6 +584,8 @@ invisible(gc())
 
 For our main cover products, EVC and LCMS, what are the cover classes of those parts of the study domain that do not fall into any of our three rasters? Note that the two products had to agree on whether a pixel was forest, grass, or shrub, so there will be landcovers that seem like they should have gone into one of our rasters but didn't.
 
+We do not deal with mixed cover classes under the current iterations of these rasters. This check-in may help decide whether that needs to change. 
+
 ```{r id-veg-gaps}
 #| eval: false
 
@@ -614,6 +628,175 @@ lcms$X <- NULL
 lcms$layer <- NULL
 lcms$area <- prettyNum(round(lcms$area, 0), big.mark=",")
 knitr::kable(lcms, row.names = F, col.names = c("LCMS cover type", "Area (ha)"))
+```
+
+\newpage
+
+# Fire deficit / surplus for FRI $\geq$ 40 years
+
+Method from [Clark-Wolf et al 2023](https://iopscience.iop.org/article/10.1088/1748-9326/acee16/meta)
+
+Winslow says:
+
+> Then we need to know what the deficit vs surplus is for forests with longer FRIs than the observed record. We can't do that at the pixel scale cuz we need to use space for time substitution. So at the level 3 ecoregion level we calculate the fire rotation by veg type (forest, grassland, shrub) the historical fire rotation is the mean fire return interval. The observed fire rotation is calculated as we calculated fire rotation periods (FRPs), defined as the time it takes to burn an area equal in size to the study area: 
+
+$$FRP = \frac{t}{\sum a_i / A} $$
+
+where *t* is the time period evaluated, $a_i$ is annual area burned in year *i*, and *A* is the size of the study area.
+
+In this case, I assume the area of the "study area" is the area of the vegetation type, within the ecoregion, within those areas where FRI > 40 years. So this will be significantly smaller than the ecoregion as a whole.
+
+```{r create-western-us-longfri-rast}
+#| eval: FALSE
+#----- Get the CSV data that has fire return interval for all BPS codes ------#
+bps <- read.csv("Z:/project_data/landfire data/LF2016_FRI_200_CONUS/CSV_Data/LF16_FRI_200.csv")
+
+#----- Filter out those units with an all-fire FRI <= 40 years ---------------#
+good_bps <- which(bps$FRI_ALLFIR > 40) 
+
+#----- Replace BPS code with FRI, making NAs for bad FRIs --------------------#
+# This matrix will be used to create a FRI raster out of the BPS codes 
+# currently stored in the raster
+mat <- matrix(c(bps$Value[good_bps], bps$FRI_ALLFIR[good_bps]), 
+              nrow=length(good_bps), ncol=2)
+
+fri_crop <- rast("../temp_rasters/fri_crop.tif")
+fri <- classify(fri_crop, mat, others=NA)
+writeRaster(fri, "../west_us_long_FRI.tif")
+```
+
+```{r}
+eco <- vect("../Data/level_3_ecoregion/eco_region.shp")
+fri <- rast("../west_us_long_FRI.tif")
+eco <- project(eco, fri)
+
+#----- Crop level 3 ecoregions to study domain -------------------------------#
+eco <- crop(eco, fri)
+
+#----- And to states ---------------------------------------------------------#
+eco <- crop(eco, states)
+
+plot(fri, axes=F, 
+     main="Study areas with FRI > 40 years, with ecoregions")
+plot(eco, add=T, border="red")
+```
+
+```{r calculate-ecoregion-fri-veg-area}
+#| eval: FALSE
+
+#-----------------------------------------------------------------------------#
+# Calculate the area of each veg type within each ecoregion for only those
+# areas with a FRI > 40, and calculate the amount of area that has been
+# burned.
+#-----------------------------------------------------------------------------#
+
+eco <- vect("../Data/level_3_ecoregion/eco_region.shp")
+states <- vect("../Data/s_05mr24.shp")
+
+fri <- rast("../west_us_long_FRI.tif")
+num_fires <- rast("../temp_rasters/num_fires.tif")
+
+eco <- project(eco, fri)
+states <- project(states, fri)
+states <- crop(states, fri)
+
+#----- Crop level 3 ecoregions to study domain -------------------------------#
+eco <- crop(eco, fri)
+
+#----- And to states ---------------------------------------------------------#
+eco <- crop(eco, states)
+
+#-----------------------------------------------------------------------------#
+# Forest
+#-----------------------------------------------------------------------------#
+forest <- rast("../western_us_forest.tif")
+
+# Create a raster that has 1 for areas of forest and FRI > 40, and NA elsewhere
+# We can start by summing; this will set NAs to NAs for both
+good_for <- fri + forest
+good_for <- ifel(!is.na(good_for), 1, NA)
+
+# Calculate number of cells left in each ecoregion
+vv <- exact_extract(good_for, sf::st_as_sf(eco), fun='sum')
+
+#----- How much of this area has burned? -------------------------------------#
+good_fire <- good_for + num_fires # Sum to NA out things not in our area
+good_fire <- good_fire - 1 # Get rid of the extra 1 from good_for
+
+# Calculate sum of burned cells left in each ecoregion
+v2 <- exact_extract(good_fire, sf::st_as_sf(eco), fun='sum')
+
+forest_dat <- data.frame(Name = eco$NA_L3NAME, 
+                         Total_Area = vv,
+                         Area_Burned = v2)
+write.csv(forest_dat, "../forest_cells_by_ecoregion_long_FRI.csv", row.names = F)
+
+
+rm(forest, good_for, good_fire)
+gc()
+
+#-----------------------------------------------------------------------------#
+# Grassland
+#-----------------------------------------------------------------------------#
+grass <- rast("../western_us_grass.tif")
+
+# Create a raster that has 1 for areas of forest and FRI > 40, and NA elsewhere
+# We can start by summing; this will set NAs to NAs for both
+good_gr <- fri + grass
+good_gr <- ifel(!is.na(good_gr), 1, NA)
+
+vv <- exact_extract(good_gr, sf::st_as_sf(eco), fun='sum')
+
+good_fire <- good_gr + num_fires # Sum to NA out things not in our area
+good_fire <- good_fire - 1 # Get rid of the extra 1 from good_gr
+
+# Calculate sum of burned cells left in each ecoregion
+v2 <- exact_extract(good_fire, sf::st_as_sf(eco), fun='sum')
+
+grass_dat <- data.frame(Name = eco$NA_L3NAME, 
+                        Total_Area = vv,
+                        Area_Burned = v2)
+write.csv(grass_dat, "../grass_cells_by_ecoregion_long_FRI.csv", row.names = F)
+rm(grass, good_gr, good_fire)
+gc()
+
+#-----------------------------------------------------------------------------#
+# Shrub
+#-----------------------------------------------------------------------------#
+shrub <- rast("../western_us_shrub.tif")
+
+# Create a raster that has 1 for areas of forest and FRI > 40, and NA elsewhere
+# We can start by summing; this will set NAs to NAs for both
+good_shrub <- fri + shrub
+good_shrub <- ifel(!is.na(good_shrub), 1, NA)
+
+vv <- exact_extract(good_shrub, sf::st_as_sf(eco), fun='sum')
+
+good_fire <- good_shrub + num_fires # Sum to NA out things not in our area
+good_fire <- good_fire - 1 # Get rid of the extra 1 from good_shrub
+
+shrub_dat <- data.frame(Name = eco$NA_L3NAME, 
+                        Total_Area = vv,
+                        Area_Burned = v2)
+write.csv(shrub_dat, "../shrub_cells_by_ecoregion_long_FRI.csv", row.names = F)
+rm(shrub, good_shrub)
+gc()
+#vv <- zonal(good_for, eco, sum, na.rm=T) Too slow
+```
+
+```{r calc-area-burned-by-eco-veg}
+#| eval: FALSE
+
+#-----------------------------------------------------------------------------#
+# The thing I have to do here is calculate the amount of area that each fire 
+# burned, that falls within our domain of ecoregion + veg type. I can do this
+# with the number of fires raster: it shows how many times each pixel has 
+# burned.
+#-----------------------------------------------------------------------------#
+
+
+
+
 ```
 
 \newpage
