@@ -1,7 +1,7 @@
 ---
 title: "Fire deficit product"
-format: pdf
-#format: docx
+#format: pdf
+format: docx
 editor: source
 author: Lora Murphy
 date: today
@@ -173,7 +173,7 @@ plot(states, add=T, fill=NULL)
 
 **Output:** raster called "western_us_fire_deficit.tif". The value in each raster is:
 
-$$ def = \frac{N_{fire}}{40/FRI} $$ where $N_{fire}$ is the number of times each cell has burned in the 1984-2024 period, FRI is the fire return interval (from the "west_us_FRI.tif" raster), and 40 is the length of the study period. Thus, the value will be number of fires divided by number of expected fires; values greater than 1 indicate a fire surplus, and less than one are a deficit.
+$$ def = \frac{N_{fire}}{40/FRI} $$ where $N_{fire}$ is the number of times each cell has burned in the 1984-2024 period, FRI is the fire return interval (from the "west_us_FRI.tif" raster), and 40 is the length of the study period. Thus, the value will be number of fires divided by number of expected fires. After that, 1 is subtracted to peg the values to 0; values greater than 0 indicate a fire surplus, and less than 0 are a deficit.
 
 (I know this isn't a super useful graphic. I'm going to have to figure out how to adjust the scale.)
 
@@ -206,8 +206,8 @@ writeRaster(r_count, "../temp_rasters/num_fires.tif")
 nfire <- rast("../temp_rasters/num_fires.tif")
 fri <- rast("../west_us_FRI.tif")
 
-def <- nfire / (40/fri)
-writeRaster(def, "../western_us_fire_deficit.tif")
+def <- (nfire / (40/fri))-1
+writeRaster(def, "../western_us_fire_deficit.tif", overwrite=T)
 ```
 
 ```{r}
@@ -241,7 +241,7 @@ EVC forest cover classes:
 -   Developed-upland deciduous forest
 -   Developed-upland evergreen forest
 -   Developed-upland mixed forest
--   Tree cover - 50% to 100%
+-   Tree cover - 20% to 100%
 
 (For a complete list of the cover classes, see the appendix.)
 
@@ -289,10 +289,12 @@ evc_codes <- read.csv("Z:/project_data/landfire data/LF2016_EVC_200_CONUS/CSV_Da
 
 #----- Filter forest cover ---------------------------------------------------#
 good_codes <- grep("Forest", evc_codes$CLASSNAMES)
-x2 <- grep("Tree Cover = 5.*", evc_codes$CLASSNAMES)
-# Drop the first one, 50%
+x2 <- grep("Tree Cover = 2.*", evc_codes$CLASSNAMES)
 x2 <- x2[2:length(x2)]
 good_codes <- c(good_codes, x2)
+good_codes <- c(good_codes, grep("Tree Cover = 3.*", evc_codes$CLASSNAMES))
+good_codes <- c(good_codes, grep("Tree Cover = 4.*", evc_codes$CLASSNAMES))
+good_codes <- c(good_codes, grep("Tree Cover = 5.*", evc_codes$CLASSNAMES))
 good_codes <- c(good_codes, grep("Tree Cover = 6.*", evc_codes$CLASSNAMES))
 good_codes <- c(good_codes, grep("Tree Cover = 7.*", evc_codes$CLASSNAMES))
 good_codes <- c(good_codes, grep("Tree Cover = 8.*", evc_codes$CLASSNAMES))
@@ -363,7 +365,7 @@ rm(frg, study_domain)
 gc()
 
 #----- Save our work here ---------------------------------------------------#
-writeRaster(frg_crop, "../temp_rasters/frg_crop.tif")
+writeRaster(frg_crop, "../temp_rasters/frg_crop.tif", overwrite=T)
 rm(frg_crop)
 gc()
 ```
@@ -1323,3 +1325,19 @@ fri_crop <- crop(fri, west_us)
 > open to additional ideas
 
 > Then at the ecoregion III level that includes all forest types, we could run DYNAFFOREST to compare during the observational period and run the model into the future to determine when different ecoregions cross the threshold from deficit to surplus.
+
+### Notes from meeting with Winslow, 2-21-2025
+
+For fire surplus / deficit: because so much of the forest is in deficit, perhaps we peg deficit to -1 to help it show up better.
+
+Can we judge the completeness of the FRI raster? To see what vegetation types and what historical fire deficit can be calculated.
+
+Forest cover: use the 20% cutoff for forest cover.
+
+For forest by categorized fire severity: it seems important to include V-A and V-B fires, to help pick up western coast and Yellowstone regions (for example). Create the same kind of map for grassland and shrubland to get a sense of how class V varies across those groups.
+
+For grass and shrub comparisons, grass looks pretty good. Shrubs - we are gonna need to include some of the mixed classes. Prepare a map of the LCMS possible shrub classes so we can see their spatial distribution and see what we might want to include.
+
+For long FRI groups, what I have calculated is the contemporary fire regime. Mean FRI on the ecoregion level is equal to the historical fire rotation period. So deficit/surplus is contemporary divided by historical.
+
+Analysis: calculating deficit / surplus for all pixels wheren FRI < 40, regardless of vegetation type (exluding developed areas). Subset by veg type by masking out our veg rasters. Then do an equivalent approach at ecoregion level. Ecoregion level total deficit/surplus, then forest deficit/surplus, grassland, shrub.
