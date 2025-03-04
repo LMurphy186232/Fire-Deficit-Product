@@ -26,17 +26,7 @@ terraOptions(tempdir="D:/workspace/Lora/temp") # Terminator
 
 # Landfire historical fire regime / fire return interval
 
-Fire return interval data is from [Landfire](https://landfire.gov/fire-regime/fri).
-
-## Alaska
-
-No locations in Alaska have a FRI $\leq$ 40 years. No further products will be created for Alaska at this time.
-
-**Output:** none.
-
-## Western US map of Fire Return Interval
-
-**Output:** raster called "west_us_FRI.tif", of CONUS cropped to the WFFRC study area, with a map of Landfire's 2016 FRI_ALLFIR values where FRI_ALLFIR is $\leq$ 40. (See appendix for summary Landfire documentation.)
+Fire return interval data is from [Landfire](https://landfire.gov/fire-regime/fri). Let's check the completeness of the raster - looks pretty complete.
 
 ```{r crop-fri-rast-to-western-us}
 #| eval: FALSE
@@ -74,6 +64,54 @@ writeRaster(fri_crop, "../temp_rasters/fri_crop.tif")
 rm(fri_crop)
 gc()
 ```
+
+```{r make-all-fri-rast}
+#| eval: false
+fri <- rast("../temp_rasters/fri_crop.tif")
+
+#----- Get the CSV data that has fire return interval for all BPS codes ------#
+bps <- read.csv("Z:/project_data/landfire data/LF2016_FRI_200_CONUS/CSV_Data/LF16_FRI_200.csv")
+
+#----- NA out unavailable FRIs -----------------------------------------------#
+good_bps <- which(bps$FRI_ALLFIR > 0) 
+
+#----- Replace BPS code with FRI, making NAs for bad FRIs --------------------#
+# This matrix will be used to create a FRI raster out of the BPS codes 
+# currently stored in the raster
+mat <- matrix(c(bps$Value[good_bps], bps$FRI_ALLFIR[good_bps]), 
+              nrow=length(good_bps), ncol=2)
+
+tile <- classify(fri, mat, others=NA)
+writeRaster(tile, "../temp_rasters/all_fri_vals.tif", overwrite = TRUE)
+```
+
+```{r}
+fri <- rast("../temp_rasters/all_fri_vals.tif")
+# This used to use the tigris package, but one day the data wasn't available on
+# line and the code broke. So I downloaded a shapefile instead
+#states <- states(cb=TRUE)
+states <- vect("../Data/s_05mr24.shp")
+states <- project(states, fri)
+states <- crop(states, fri)
+plot(fri, axes=F, 
+     range=c(0,500),
+     fill_range=T,
+     #col=map.pal("bgyr", bias=3),
+     main="LANDFIRE Fire return interval")
+plot(states, add=T, fill=NULL)
+```
+
+## Alaska
+
+No locations in Alaska have a FRI $\leq$ 40 years. No further products will be created for Alaska at this time.
+
+**Output:** none.
+
+## Western US map of Fire Return Interval
+
+**Output:** raster called "west_us_FRI.tif", of CONUS cropped to the WFFRC study area, with a map of Landfire's 2016 FRI_ALLFIR values where FRI_ALLFIR is $\leq$ 40. (See appendix for summary Landfire documentation.)
+
+
 
 ```{r create-western-us-fri-rast}
 #| eval: FALSE
@@ -175,8 +213,6 @@ plot(states, add=T, fill=NULL)
 
 $$ def = \frac{N_{fire}}{40/FRI} $$ where $N_{fire}$ is the number of times each cell has burned in the 1984-2024 period, FRI is the fire return interval (from the "west_us_FRI.tif" raster), and 40 is the length of the study period. Thus, the value will be number of fires divided by number of expected fires. After that, 1 is subtracted to peg the values to 0; values greater than 0 indicate a fire surplus, and less than 0 are a deficit.
 
-(I know this isn't a super useful graphic. I'm going to have to figure out how to adjust the scale.)
-
 ```{r create-fire-count-raster}
 #| eval: false
 
@@ -221,7 +257,12 @@ def <- rast("../western_us_fire_deficit.tif")
 #  scale_fill_gradient2(low="red", mid="green", high="blue", 
 #                       midpoint=1)
 
+# Bias tweaks the scale. The higher the number, the more colors are stuffed
+# into the lower end of the scale.
 plot(def, axes=F,
+     range=c(-1,1),
+     fill_range=T,
+     #col=map.pal("bgyr", bias=2.5),
      main="Fire deficit / surplus")
 plot(states, add=T, fill=NULL)
 rm(def)
@@ -234,18 +275,18 @@ invisible(gc())
 
 **Output:** raster called "western_us_forest.tif"
 
-A value of 1 indicates forest according to our definition, NA for all others. Our definition of forest is a pixel that is forest in both [Landfire EVC](https://landfire.gov/vegetation/evc) 2016 and the Landscape Change Monitoring System (LCMS) 2016 data. I received LCMS data from Mahsa.
+A value of 1 indicates forest according to our definition, NA for all others. Our definition of forest is based on a combination of [Landfire EVC](https://landfire.gov/vegetation/evc) 2016 and the Landscape Change Monitoring System (LCMS) 2016 data. I received LCMS data from Mahsa.
 
 EVC forest cover classes:
 
--   Developed-upland deciduous forest
--   Developed-upland evergreen forest
--   Developed-upland mixed forest
--   Tree cover - 20% to 100%
+-   Developed-upland deciduous forest - always included
+-   Developed-upland evergreen forest - always included
+-   Developed-upland mixed forest - always included
+-   Tree cover - 20% to 100% - included if LCMS also categorizes the area as TREES.
+
+Note: we originally tried tree cover at 50-100%, but 20% was a closer approximation to the LCMS definition of forest, and helped sort out some mixed cover classes.
 
 (For a complete list of the cover classes, see the appendix.)
-
-LCMS forest cover class: TREES.
 
 ```{r crop-evc-rast-to-western-us}
 #| eval: FALSE
@@ -287,11 +328,17 @@ writeRaster(lcms_crop, "../temp_rasters/lcms_crop.tif")
 #----- Get the CSV data with vegetation codes --------------------------------#
 evc_codes <- read.csv("Z:/project_data/landfire data/LF2016_EVC_200_CONUS/CSV_Data/LF16_EVC_200.csv")
 
-#----- Filter forest cover ---------------------------------------------------#
+#-----------------------------------------------------------------------------#
+# Make a forest cover mask - 2 if developed upland, 1 if other cover, 0 if not 
+#-----------------------------------------------------------------------------#
+
+#----- Always included classes. Mark with a 2 --------------------------------#
 good_codes <- grep("Forest", evc_codes$CLASSNAMES)
-x2 <- grep("Tree Cover = 2.*", evc_codes$CLASSNAMES)
-x2 <- x2[2:length(x2)]
-good_codes <- c(good_codes, x2)
+mat <- matrix(c(evc_codes$VALUE[good_codes], rep(2, length(good_codes))), 
+              nrow=length(good_codes), ncol=2)
+
+#----- Forest cover - conditional inclusion. Mark with a 1 -------------------#
+good_codes <- grep("Tree Cover = 2.*", evc_codes$CLASSNAMES)
 good_codes <- c(good_codes, grep("Tree Cover = 3.*", evc_codes$CLASSNAMES))
 good_codes <- c(good_codes, grep("Tree Cover = 4.*", evc_codes$CLASSNAMES))
 good_codes <- c(good_codes, grep("Tree Cover = 5.*", evc_codes$CLASSNAMES))
@@ -301,9 +348,9 @@ good_codes <- c(good_codes, grep("Tree Cover = 8.*", evc_codes$CLASSNAMES))
 good_codes <- c(good_codes, grep("Tree Cover = 9.*", evc_codes$CLASSNAMES))
 good_codes <- c(good_codes, grep("Tree Cover >= 99.*", evc_codes$CLASSNAMES))
 
-#----- Make a forest cover mask - 1 if in cover, 0 if not --------------------#
-mat <- matrix(c(evc_codes$VALUE[good_codes], rep(1, length(good_codes))), 
-              nrow=length(good_codes), ncol=2)
+mat <- rbind(mat,
+             matrix(c(evc_codes$VALUE[good_codes], rep(1, length(good_codes))), 
+              nrow=length(good_codes), ncol=2))
 
 evc_crop <- rast("../temp_rasters/evc_crop.tif")
 evc <- classify(evc_crop, mat, others=NA)
@@ -325,7 +372,10 @@ evc   <- rast("../temp_rasters/evc_forest.tif")
 lcms  <- rast("../temp_rasters/lcms_forest.tif")
 
 all <- sum(evc, lcms, na.rm=T)
-all <- classify(all, cbind(2, 1), others=NA)
+
+# Values of 3 and 2 are forest, 1s are not
+mat <- matrix(c(2:3, 1,1), nrow=2)
+all <- classify(all, mat, others=NA)
 writeRaster(all, "../western_us_forest.tif", overwrite = TRUE)
 ```
 
@@ -337,7 +387,7 @@ rm(forest)
 invisible(gc())
 ```
 
-## Subdivide forest by fire type
+## Subdivide forest by fire regime
 
 Our identified forest regions can be subdivided by fire regime as follows:
 
@@ -397,7 +447,7 @@ mat <- matrix(c(bps$Value, bps$grp), nrow=nrow(bps), ncol=2)
 
 frg_crop <- rast("../temp_rasters/frg_crop.tif")
 frg <- classify(frg_crop, mat, others=NA)
-writeRaster(frg, "../temp_rasters/frg.tif")
+writeRaster(frg, "../temp_rasters/frg.tif", overwrite=T)
 ```
 ```{r create-classified-forest-rasts}
 #| eval: false
@@ -504,6 +554,44 @@ rm(grass)
 invisible(gc())
 ```
 
+## Subdivide grass by fire regime
+
+Our identified forest regions can be subdivided by fire regime as follows:
+
+**Output:** Raster called "western_us_frg_grass.tif" with the following values:
+
+-   1: dry frequent fire (FRG groups I-A, I-B, and I-C))
+-   2: mixed severity fire (FRG groups IIIA and IIIB)
+-   3: long interval stand replacing fire (FRG groups IV-A and IV-B)
+-   4: long interval stand replacing fire (FRG groups V-A, and V-B)
+
+(See appendix for a complete list of FRG codes.)
+
+```{r create-classified-grass-rasts}
+#| eval: false
+
+#----- Load my FRG groups, and the grass raster ------------------------------#
+frg <- rast("../temp_rasters/frg.tif")
+grass <- rast("../western_us_grass.tif")
+
+#----- Dry frequent fire - group 1 -------------------------------------------#
+dff <- sum(frg, grass)
+dff <- dff - 1
+levels(dff) <- data.frame(ID = 1:4, 
+                  category = c("Dry frequent fire", "Mixed severity fire", 
+                 "Stand replacing group IV", "Stand replacing group V"))
+writeRaster(dff, "../western_us_frg_grass.tif", overwrite=T)
+```
+```{r}
+dff <- rast("../western_us_frg_grass.tif")
+
+plot(dff, main="Grassland area categorized by fire regime",
+     axes=F)
+plot(states, add=T, fill=NULL)
+rm(dff)
+invisible(gc())
+```
+
 # Shrub/chaparral Area
 
 **Output:** raster called "west_us_shrub.tif"
@@ -583,6 +671,44 @@ rm(shrub)
 invisible(gc())
 ```
 
+## Subdivide shrubland by fire regime
+
+Our identified forest regions can be subdivided by fire regime as follows:
+
+**Output:** Raster called "western_us_frg_shrub.tif" with the following values:
+
+-   1: dry frequent fire (FRG groups I-A, I-B, and I-C))
+-   2: mixed severity fire (FRG groups IIIA and IIIB)
+-   3: long interval stand replacing fire (FRG groups IV-A and IV-B)
+-   4: long interval stand replacing fire (FRG groups V-A, and V-B)
+
+(See appendix for a complete list of FRG codes.)
+
+```{r create-classified-shrub-rasts}
+#| eval: false
+
+#----- Load my FRG groups, and the shrub raster ------------------------------#
+frg <- rast("../temp_rasters/frg.tif")
+shrub <- rast("../western_us_shrub.tif")
+
+#----- Dry frequent fire - group 1 -------------------------------------------#
+dff <- sum(frg, shrub)
+dff <- dff - 1
+levels(dff) <- data.frame(ID = 1:4, 
+                  category = c("Dry frequent fire", "Mixed severity fire", 
+                 "Stand replacing group IV", "Stand replacing group V"))
+writeRaster(dff, "../western_us_frg_shrub.tif", overwrite=T)
+```
+```{r}
+dff <- rast("../western_us_frg_shrub.tif")
+
+plot(dff, main="Shrub area categorized by fire regime",
+     axes=F)
+plot(states, add=T, fill=NULL)
+rm(dff)
+invisible(gc())
+```
+
 # Areas excluded from vegetation cover rasters
 
 For our main cover products, EVC and LCMS, what are the cover classes of those parts of the study domain that do not fall into any of our three rasters? Note that the two products had to agree on whether a pixel was forest, grass, or shrub, so there will be landcovers that seem like they should have gone into one of our rasters but didn't.
@@ -601,7 +727,7 @@ rm(forest, grass, shrub)
 
 evc <- rast("../temp_rasters/evc_crop.tif")
 evc_out <- mask(evc, all, inverse=T)
-writeRaster(evc_out, "../temp_rasters/evc_excluded.tif")
+writeRaster(evc_out, "../temp_rasters/evc_excluded.tif", overwrite=T)
 
 x <- freq(evc_out)
 x$area <- (x$count * prod(res(evc_out)))/10000
@@ -610,7 +736,7 @@ rm(evc_out, evc)
 
 lcms <- rast("../temp_rasters/lcms_crop.tif")
 lcms_out <- mask(lcms, all, inverse=T)
-writeRaster(lcms_out, "../temp_rasters/lcms_excluded.tif")
+writeRaster(lcms_out, "../temp_rasters/lcms_excluded.tif", overwrite=T)
 
 x <- freq(lcms_out)
 x$area <- (x$count * prod(res(lcms_out)))/10000
@@ -662,9 +788,13 @@ $$FRP = \frac{t}{\sum a_i / A} $$
 
 where *t* is the time period evaluated, $a_i$ is annual area burned in year *i*, and *A* is the size of the study area.
 
-**Need a double check here to make sure I've understood this right:** When considering the area *A* and the burned areas $a_i$, I am only considering pixels within the subsetted areas: within the ecoregion, within those areas where FRI > 40 years, within the vegetation type in question.
+This is the contemporary FRP. We can take the mean ecoregion FRI as the historical value. Ecoregion-level deficit / surplus will thus be contemporary divided by historical. 
 
-Here are ecoregion-level tables of FRG; spatial products can follow.
+**Need a double check here to make sure I've understood this right:** When considering the area *A* and the burned areas $a_i$, I am only considering pixels within the subsetted areas: within the ecoregion, within those areas where FRI > 40 years, within the vegetation type in question. Same when calculating mean FRI.
+
+Here are ecoregion-level tables of FRP.
+
+**This section currently in progress**
 
 ```{r create-western-us-longfri-rast}
 #| eval: FALSE
@@ -853,6 +983,19 @@ knitr::kable(dat, col.names = c("Level 3 Ecoregion",
                                 "FRG"), digits=1)
 ```
 
+```{r calculate-mean-historical-fri-ecoregion}
+#| eval: false
+fri <- rast("../west_us_long_FRI.tif")
+eco <- vect("../Data/level_3_ecoregion/eco_region.shp")
+eco <- project(eco, fri)
+
+#----- Total mean FRI by ecoregion -------------------------------------------#
+vt <- exact_extract(fri, sf::st_as_sf(eco), fun='mean')
+#forest_dat <- data.frame(Name = eco$NA_L3NAME, 
+#                         Total_Area = vv,
+#                         Area_Burned = v2)
+```
+
 \newpage
 
 # Appendix - Landfire FRI documentation
@@ -922,7 +1065,7 @@ knitr::kable(evc_codes[,1:2])
 
 \newpage
 
-### Cover class listing for LCMS
+## Cover class listing for LCMS
 
 1: TREES: The majority of the pixel is comprised of live or standing dead trees.
 
