@@ -275,14 +275,16 @@ invisible(gc())
 
 **Output:** raster called "western_us_forest.tif"
 
-A value of 1 indicates forest according to our definition, NA for all others. Our definition of forest is based on a combination of [Landfire EVC](https://landfire.gov/vegetation/evc) 2016 and the Landscape Change Monitoring System (LCMS) 2016 data. I received LCMS data from Mahsa.
+A value of 1 indicates forest according to our definition, NA for all others. Our definition of forest is a pixel that is forest in both [Landfire EVC](https://landfire.gov/vegetation/evc) and the Landscape Change Monitoring System (LCMS) 2016 data. I received LCMS data from Mahsa.
 
 EVC forest cover classes:
 
--   Developed-upland deciduous forest - always included
--   Developed-upland evergreen forest - always included
--   Developed-upland mixed forest - always included
--   Tree cover - 20% to 100% - included if LCMS also categorizes the area as TREES.
+-   Developed-upland deciduous forest
+-   Developed-upland evergreen forest
+-   Developed-upland mixed forest
+-   Tree cover - 20% to 100%
+
+LCMS forest cover class: TREES.
 
 Note: we originally tried tree cover at 50-100%, but 20% was a closer approximation to the LCMS definition of forest, and helped sort out some mixed cover classes.
 
@@ -310,7 +312,7 @@ gc()
 
 ```{r crop-lcms-rast-to-western-us}
 #| eval: false
-lcms <- rast("Data/Balch forest cover/Land_cover_2016/LCMS_CONUS_v2023-9_Land_Cover_2016.tif")
+lcms <- rast("../Data/Balch forest cover/Land_cover_2016/LCMS_CONUS_v2023-9_Land_Cover_2016.tif")
 
 study_domain <- rast("../temp_rasters/study_domain.tif")
 
@@ -320,7 +322,9 @@ lcms_crop <- mask(lcms_crop, study_domain)
 rm(lcms)
 invisible(gc())
 
-writeRaster(lcms_crop, "../temp_rasters/lcms_crop.tif")
+lcms_crop <- project(lcms_crop, study_domain, method="near")
+
+writeRaster(lcms_crop, "../temp_rasters/lcms_crop.tif", overwrite=T)
 ```
 
 ```{r create-evc-western-us-forest-rast}
@@ -329,16 +333,13 @@ writeRaster(lcms_crop, "../temp_rasters/lcms_crop.tif")
 evc_codes <- read.csv("Z:/project_data/landfire data/LF2016_EVC_200_CONUS/CSV_Data/LF16_EVC_200.csv")
 
 #-----------------------------------------------------------------------------#
-# Make a forest cover mask - 2 if developed upland, 1 if other cover, 0 if not 
+# Make a forest cover mask for EVC
 #-----------------------------------------------------------------------------#
-
-#----- Always included classes. Mark with a 2 --------------------------------#
+#----- Upland forest cover classes
 good_codes <- grep("Forest", evc_codes$CLASSNAMES)
-mat <- matrix(c(evc_codes$VALUE[good_codes], rep(2, length(good_codes))), 
-              nrow=length(good_codes), ncol=2)
 
 #----- Forest cover - conditional inclusion. Mark with a 1 -------------------#
-good_codes <- grep("Tree Cover = 2.*", evc_codes$CLASSNAMES)
+good_codes <- c(good_codes, grep("Tree Cover = 2.*", evc_codes$CLASSNAMES))
 good_codes <- c(good_codes, grep("Tree Cover = 3.*", evc_codes$CLASSNAMES))
 good_codes <- c(good_codes, grep("Tree Cover = 4.*", evc_codes$CLASSNAMES))
 good_codes <- c(good_codes, grep("Tree Cover = 5.*", evc_codes$CLASSNAMES))
@@ -348,9 +349,8 @@ good_codes <- c(good_codes, grep("Tree Cover = 8.*", evc_codes$CLASSNAMES))
 good_codes <- c(good_codes, grep("Tree Cover = 9.*", evc_codes$CLASSNAMES))
 good_codes <- c(good_codes, grep("Tree Cover >= 99.*", evc_codes$CLASSNAMES))
 
-mat <- rbind(mat,
-             matrix(c(evc_codes$VALUE[good_codes], rep(1, length(good_codes))), 
-              nrow=length(good_codes), ncol=2))
+mat <- matrix(c(evc_codes$VALUE[good_codes], rep(1, length(good_codes))), 
+              nrow=length(good_codes), ncol=2)
 
 evc_crop <- rast("../temp_rasters/evc_crop.tif")
 evc <- classify(evc_crop, mat, others=NA)
@@ -373,9 +373,8 @@ lcms  <- rast("../temp_rasters/lcms_forest.tif")
 
 all <- sum(evc, lcms, na.rm=T)
 
-# Values of 3 and 2 are forest, 1s are not
-mat <- matrix(c(2:3, 1,1), nrow=2)
-all <- classify(all, mat, others=NA)
+#----- Values of 2 are forest (both rasters agree), 1s are not ---------------#
+all <- classify(all, cbind(2, 1), others=NA)
 writeRaster(all, "../western_us_forest.tif", overwrite = TRUE)
 ```
 
@@ -449,6 +448,7 @@ frg_crop <- rast("../temp_rasters/frg_crop.tif")
 frg <- classify(frg_crop, mat, others=NA)
 writeRaster(frg, "../temp_rasters/frg.tif", overwrite=T)
 ```
+
 ```{r create-classified-forest-rasts}
 #| eval: false
 
@@ -490,7 +490,11 @@ EVC grass cover classes:
 
 There are herb cover classes \< 20%, but this appears to indicate a pixel that is mostly barren.
 
-LCMS forest cover class: GRASS/FORB/HERB.
+LCMS forest cover class: 
+-   GRASS/FORB/HERB
+-   GRASS/FORB/HERB AND TREES MIX
+-   GRASS/FORB/HERB AND SHRUBS MIX 
+
 
 ```{r create-evc-grass-rast}
 #| eval: FALSE
@@ -532,7 +536,11 @@ writeRaster(evc, "../temp_rasters/evc_grass.tif", overwrite = TRUE)
 #| eval: false
 
 lcms_crop <- rast("../temp_rasters/lcms_crop.tif")
-lcms_crop <- classify(lcms_crop, cbind(10,1), others=NA)
+lcms_crop <- classify(lcms_crop, 
+      cbind(c(10, # GRASS/FORB/HERB
+              4,  # GRASS/FORB/HERB AND TREES MIX and 
+              8   # GRASS/FORB/HERB AND SHRUBS MIX
+  ), rep(1,3)), others=NA)
 writeRaster(lcms_crop, "../temp_rasters/lcms_grass.tif", overwrite = TRUE)
 ```
 
@@ -607,7 +615,7 @@ There are shrub cover classes \< 20%, but this appears to indicate a pixel that 
 
 LCMS forest cover classes:
 
--   GRASS/FORB/HERB AND SHRUBS MIX (this is at least 10% shrubs)
+-   SHRUBS AND TREES MIX
 -   TALL SHRUBS
 -   SHRUBS
 
@@ -646,9 +654,9 @@ writeRaster(evc, "../temp_rasters/evc_shrub.tif", overwrite = TRUE)
 
 lcms_crop <- rast("../temp_rasters/lcms_crop.tif")
 lcms_crop <- classify(lcms_crop, 
-      cbind(c(8, # GRASS/FORB/HERB AND SHRUBS MIX
+      cbind(c(3, # SHRUBS AND TREES MIX
               6, # TALL SHRUBS
-              7 # SHRUBS
+              7  # SHRUBS
   ), rep(1,3)), others=NA)
 writeRaster(lcms_crop, "../temp_rasters/lcms_shrub.tif", overwrite = TRUE)
 ```
