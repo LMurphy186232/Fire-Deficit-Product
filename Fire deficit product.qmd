@@ -275,18 +275,16 @@ invisible(gc())
 
 **Output:** raster called "western_us_forest.tif"
 
-A value of 1 indicates forest according to our definition, NA for all others. Our definition of forest is a pixel that is forest in both [Landfire EVC](https://landfire.gov/vegetation/evc) and the Landscape Change Monitoring System (LCMS) 2016 data. I received LCMS data from Mahsa.
-
-EVC forest cover classes:
+A value of 1 indicates forest according to our definition, NA for all others. Our definition of forest is a pixel that is one of the following cover classes in the [Landfire EVC](https://landfire.gov/vegetation/evc):
 
 -   Developed-upland deciduous forest
 -   Developed-upland evergreen forest
 -   Developed-upland mixed forest
 -   Tree cover - 20% to 100%
 
-LCMS forest cover class: TREES.
-
 Note: we originally tried tree cover at 50-100%, but 20% was a closer approximation to the LCMS definition of forest, and helped sort out some mixed cover classes.
+
+We originally used a definition of forest that was the intersection between Landfire and LCMS, but it turns out that LCMS does not do a good job of correctly differentiating between shrubs and trees, which is crucial for many of our areas. The exercise did help validate the Landfire cover classes. 
 
 (For a complete list of the cover classes, see the appendix.)
 
@@ -308,23 +306,6 @@ gc()
 writeRaster(evc_crop, "../temp_rasters/evc_crop.tif")
 rm(evc_crop)
 gc()
-```
-
-```{r crop-lcms-rast-to-western-us}
-#| eval: false
-lcms <- rast("../Data/Balch forest cover/Land_cover_2016/LCMS_CONUS_v2023-9_Land_Cover_2016.tif")
-
-study_domain <- rast("../temp_rasters/study_domain.tif")
-
-#----- Crop and mask to study domain - CRS is compatible ---------------------#
-lcms_crop <- crop(lcms, study_domain)
-lcms_crop <- mask(lcms_crop, study_domain)
-rm(lcms)
-invisible(gc())
-
-lcms_crop <- project(lcms_crop, study_domain, method="near")
-
-writeRaster(lcms_crop, "../temp_rasters/lcms_crop.tif", overwrite=T)
 ```
 
 ```{r create-evc-western-us-forest-rast}
@@ -356,27 +337,9 @@ evc_crop <- rast("../temp_rasters/evc_crop.tif")
 evc <- classify(evc_crop, mat, others=NA)
 rm(evc_crop)
 gc()
-writeRaster(evc, "../temp_rasters/evc_forest.tif", overwrite = TRUE)
+writeRaster(evc, "../western_us_forest.tif", overwrite = TRUE)
 ```
 
-```{r create-lcms-western-us-forest-rast}
-#| eval: false
-lcms_crop <- rast("../temp_rasters/lcms_crop.tif")
-lcms_crop <- classify(lcms_crop, cbind(1,1), others=NA)
-writeRaster(lcms_crop, "../temp_rasters/lcms_forest.tif", overwrite = TRUE)
-```
-
-```{r create-western-us-forest-rast}
-#| eval: false
-evc   <- rast("../temp_rasters/evc_forest.tif")
-lcms  <- rast("../temp_rasters/lcms_forest.tif")
-
-all <- sum(evc, lcms, na.rm=T)
-
-#----- Values of 2 are forest (both rasters agree), 1s are not ---------------#
-all <- classify(all, cbind(2, 1), others=NA)
-writeRaster(all, "../western_us_forest.tif", overwrite = TRUE)
-```
 
 ```{r}
 forest <- rast("../western_us_forest.tif")
@@ -480,21 +443,13 @@ invisible(gc())
 
 **Output:** raster called "west_us_grass.tif"
 
-A value of 1 indicates grassland according to our definition, NA for all others. Our definition of grassland is a pixel that is grass in both [Landfire EVC](https://landfire.gov/vegetation/evc) 2016 and the Landscape Change Monitoring System (LCMS) 2016 data.
-
-EVC grass cover classes:
+A value of 1 indicates grassland according to our definition, NA for all others. Our definition of grassland is a pixel that is one of the following cover classes in [Landfire EVC](https://landfire.gov/vegetation/evc) 2016:
 
 -   Developed-Upland Herbaceous
 -   Developed - Open Space
 -   Herb cover 20-90%
 
 There are herb cover classes \< 20%, but this appears to indicate a pixel that is mostly barren.
-
-LCMS forest cover class: 
--   GRASS/FORB/HERB
--   GRASS/FORB/HERB AND TREES MIX
--   GRASS/FORB/HERB AND SHRUBS MIX 
-
 
 ```{r create-evc-grass-rast}
 #| eval: FALSE
@@ -529,30 +484,9 @@ evc_crop <- rast("../temp_rasters/evc_crop.tif")
 evc <- classify(evc_crop, mat, others=NA)
 rm(evc_crop)
 gc()
-writeRaster(evc, "../temp_rasters/evc_grass.tif", overwrite = TRUE)
+writeRaster(evc, "../western_us_grass.tif", overwrite = TRUE)
 ```
 
-```{r create-lcms-grass-rast}
-#| eval: false
-
-lcms_crop <- rast("../temp_rasters/lcms_crop.tif")
-lcms_crop <- classify(lcms_crop, 
-      cbind(c(10, # GRASS/FORB/HERB
-              4,  # GRASS/FORB/HERB AND TREES MIX and 
-              8   # GRASS/FORB/HERB AND SHRUBS MIX
-  ), rep(1,3)), others=NA)
-writeRaster(lcms_crop, "../temp_rasters/lcms_grass.tif", overwrite = TRUE)
-```
-
-```{r create-western-us-grass-rast}
-#| eval: false
-evc   <- rast("../temp_rasters/evc_grass.tif")
-lcms  <- rast("../temp_rasters/lcms_grass.tif")
-
-all <- sum(evc, lcms, na.rm=T)
-all <- classify(all, cbind(2, 1), others=NA)
-writeRaster(all, "../western_us_grass.tif", overwrite = TRUE)
-```
 
 ```{r}
 grass <- rast("../western_us_grass.tif")
@@ -604,20 +538,12 @@ invisible(gc())
 
 **Output:** raster called "west_us_shrub.tif"
 
-A value of 1 indicates shrubland according to our definition, NA for all others. Our definition of shrubland is a pixel that is shrub in both [Landfire EVC](https://landfire.gov/vegetation/evc) 2016 and the Landscape Change Monitoring System (LCMS) 2016 data.
-
-EVC shrub cover classes:
+A value of 1 indicates shrubland according to our definition, NA for all others. Our definition of shrubland is a pixel that is one of the following [Landfire EVC](https://landfire.gov/vegetation/evc) 2016 cover classes:
 
 -   Developed-Upland Shrubland
 -   Shrub cover 20-90% (although actual values only appear up to 79%)
 
 There are shrub cover classes \< 20%, but this appears to indicate a pixel that is mostly barren.
-
-LCMS forest cover classes:
-
--   SHRUBS AND TREES MIX
--   TALL SHRUBS
--   SHRUBS
 
 ```{r create-evc-shrub-rast}
 #| eval: FALSE
@@ -646,29 +572,7 @@ evc_crop <- rast("../temp_rasters/evc_crop.tif")
 evc <- classify(evc_crop, mat, others=NA)
 rm(evc_crop)
 gc()
-writeRaster(evc, "../temp_rasters/evc_shrub.tif", overwrite = TRUE)
-```
-
-```{r create-lcms-shrub-rast}
-#| eval: false
-
-lcms_crop <- rast("../temp_rasters/lcms_crop.tif")
-lcms_crop <- classify(lcms_crop, 
-      cbind(c(3, # SHRUBS AND TREES MIX
-              6, # TALL SHRUBS
-              7  # SHRUBS
-  ), rep(1,3)), others=NA)
-writeRaster(lcms_crop, "../temp_rasters/lcms_shrub.tif", overwrite = TRUE)
-```
-
-```{r create-western-us-shrub-rast}
-#| eval: false
-evc   <- rast("../temp_rasters/evc_shrub.tif")
-lcms  <- rast("../temp_rasters/lcms_shrub.tif")
-
-all <- sum(evc, lcms, na.rm=T)
-all <- classify(all, cbind(2, 1), others=NA)
-writeRaster(all, "../western_us_shrub.tif", overwrite = TRUE)
+writeRaster(evc, "../western_us_shrub.tif", overwrite = TRUE)
 ```
 
 ```{r}
@@ -717,72 +621,6 @@ rm(dff)
 invisible(gc())
 ```
 
-# Areas excluded from vegetation cover rasters
-
-For our main cover products, EVC and LCMS, what are the cover classes of those parts of the study domain that do not fall into any of our three rasters? Note that the two products had to agree on whether a pixel was forest, grass, or shrub, so there will be landcovers that seem like they should have gone into one of our rasters but didn't.
-
-We do not deal with mixed cover classes under the current iterations of these rasters. This check-in may help decide whether that needs to change. 
-
-```{r id-veg-gaps}
-#| eval: false
-
-forest <- rast("../western_us_forest.tif")
-grass  <- rast("../western_us_grass.tif")
-shrub  <- rast("../western_us_shrub.tif")
-
-all <- sum(forest, grass, shrub, na.rm=T)
-rm(forest, grass, shrub)
-
-evc <- rast("../temp_rasters/evc_crop.tif")
-evc_out <- mask(evc, all, inverse=T)
-writeRaster(evc_out, "../temp_rasters/evc_excluded.tif", overwrite=T)
-
-x <- freq(evc_out)
-x$area <- (x$count * prod(res(evc_out)))/10000
-write.csv(x, "../EVC coverage gaps.csv")
-rm(evc_out, evc)
-
-lcms <- rast("../temp_rasters/lcms_crop.tif")
-lcms_out <- mask(lcms, all, inverse=T)
-writeRaster(lcms_out, "../temp_rasters/lcms_excluded.tif", overwrite=T)
-
-x <- freq(lcms_out)
-x$area <- (x$count * prod(res(lcms_out)))/10000
-write.csv(x, "../LCMS coverage gaps.csv")
-```
-
-```{r}
-evc_out <- rast("../temp_rasters/evc_excluded.tif")
-plot(evc_out, axes=F, legend=F, main="Landfire EVC not in an existing raster")
-
-evc <- read.csv("../EVC coverage gaps.csv")
-evc$count <- NULL
-evc$X <- NULL
-evc$layer <- NULL
-
-# Condense some layers
-for (cov in c("Tree Cover", "Herb Cover", "Shrub Cover")) {
-  for (perc in 1:9) {
-    x <- grep(paste0(cov, " = ", perc, ".*"), evc$value)
-    if (length(x) > 0) {
-    area = sum(evc$area[x])
-    evc <- evc[-x,]
-    evc <- rbind(evc, data.frame(value = paste0(cov, " ", perc, "1-",
-                                                perc,"9%"),
-                                 area = area))
-    }
-  }
-}
-evc$area <- prettyNum(round(evc$area, 0), big.mark=",")
-knitr::kable(evc, row.names = F, col.names = c("EVC cover type", "Area (ha)"))
-
-lcms <- read.csv("../LCMS coverage gaps.csv")
-lcms$count <- NULL
-lcms$X <- NULL
-lcms$layer <- NULL
-lcms$area <- prettyNum(round(lcms$area, 0), big.mark=",")
-knitr::kable(lcms, row.names = F, col.names = c("LCMS cover type", "Area (ha)"))
-```
 
 \newpage
 
@@ -1390,6 +1228,8 @@ invisible(gc())
 ```
 
 Disagreement between these rasters appears to be based on how much barren land is acceptable, and where mixed classes fall.
+
+We eventually determined that LCMS did a pretty bad job of differentiating between shrubs and trees, identifying lots of shrubland in southern California as forest, so we gave it up as a bad job for our main rasters and thanked it for its service in helping validate cover choices.
 
 ```{r archive-crop}
 #| eval: FALSE
