@@ -437,6 +437,32 @@ rm(dff)
 invisible(gc())
 ```
 
+## Forest area fire deficit/surplus where FRI $\leq$ 40 years
+
+**Output:** raster called "forest_deficit.tif", where the values in the raster "western_us_fire_deficit.tif" are masked out to areas in our forest raster ("western_us_forest.tif").
+
+```{r create-forest-deficit-rast}
+#| eval: false
+
+defi <- rast("../western_us_fire_deficit.tif")
+fors <- rast("../western_us_forest.tif")
+
+fordef <- mask(defi, fors)
+writeRaster(fordef, "../forest_deficit.tif", overwrite=T)
+```
+```{r}
+fordef <- rast("../forest_deficit.tif")
+plot(fordef, axes=F,
+     range=c(-1,1),
+     fill_range=T,
+     #col=map.pal("bgyr", bias=2.5),
+     main="Forest area fire deficit / surplus")
+plot(states, add=T, fill=NULL)
+rm(fordef)
+invisible(gc())
+```
+
+
 \newpage
 
 # Grassland Area
@@ -534,6 +560,31 @@ rm(dff)
 invisible(gc())
 ```
 
+## Grass area fire deficit/surplus where FRI $\leq$ 40 years
+
+**Output:** raster called "grass_deficit.tif", where the values in the raster "western_us_fire_deficit.tif" are masked out to areas in our grass raster ("western_us_grass.tif").
+
+```{r create-grass-deficit-rast}
+#| eval: false
+
+defi <- rast("../western_us_fire_deficit.tif")
+fors <- rast("../western_us_grass.tif")
+
+fordef <- mask(defi, fors)
+writeRaster(fordef, "../grass_deficit.tif", overwrite=T)
+```
+```{r}
+fordef <- rast("../grass_deficit.tif")
+plot(fordef, axes=F,
+     range=c(-1,1),
+     fill_range=T,
+     #col=map.pal("bgyr", bias=2.5),
+     main="Grass area fire deficit / surplus")
+plot(states, add=T, fill=NULL)
+rm(fordef)
+invisible(gc())
+```
+
 # Shrub/chaparral Area
 
 **Output:** raster called "west_us_shrub.tif"
@@ -621,6 +672,30 @@ rm(dff)
 invisible(gc())
 ```
 
+## Shrub area fire deficit/surplus where FRI $\leq$ 40 years
+
+**Output:** raster called "shrub_deficit.tif", where the values in the raster "western_us_fire_deficit.tif" are masked out to areas in our shrub raster ("western_us_shrub.tif").
+
+```{r create-shrub-deficit-rast}
+#| eval: false
+
+defi <- rast("../western_us_fire_deficit.tif")
+fors <- rast("../western_us_shrub.tif")
+
+fordef <- mask(defi, fors)
+writeRaster(fordef, "../shrub_deficit.tif", overwrite=T)
+```
+```{r}
+fordef <- rast("../shrub_deficit.tif")
+plot(fordef, axes=F,
+     range=c(-1,1),
+     fill_range=T,
+     #col=map.pal("bgyr", bias=2.5),
+     main="Shrub area fire deficit / surplus")
+plot(states, add=T, fill=NULL)
+rm(fordef)
+invisible(gc())
+```
 
 \newpage
 
@@ -639,8 +714,6 @@ This is the contemporary FRP. We can take the mean ecoregion FRI as the historic
 **Need a double check here to make sure I've understood this right:** When considering the area *A* and the burned areas $a_i$, I am only considering pixels within the subsetted areas: within the ecoregion, within those areas where FRI > 40 years, within the vegetation type in question. Same when calculating mean FRI.
 
 Here are ecoregion-level tables of FRP.
-
-**This section currently in progress**
 
 ```{r create-western-us-longfri-rast}
 #| eval: FALSE
@@ -683,7 +756,10 @@ plot(eco, add=T, border="red")
 #-----------------------------------------------------------------------------#
 # Calculate the area of each veg type within each ecoregion for only those
 # areas with a FRI > 40, and calculate the amount of area that has been
-# burned.
+# burned. Also calculate the SUM of FRI. These are grid cell counts and are
+# not helpful in raw form, but they will help us accurately calculate metrics.
+# For instance, sum of FRI is so we can get an average FRI across discontinuous
+# ecoregion areas.
 #-----------------------------------------------------------------------------#
 
 eco <- vect("../Data/level_3_ecoregion/eco_region.shp")
@@ -703,13 +779,53 @@ eco <- crop(eco, fri)
 eco <- crop(eco, states)
 
 #-----------------------------------------------------------------------------#
+# All veg area
+#-----------------------------------------------------------------------------#
+
+#----- Sum of FRI by ecoregion -----------------------------------------------#
+sum_fri <- exact_extract(fri, sf::st_as_sf(eco), fun='sum')
+
+#----- FRP: total area -------------------------------------------------------#
+# Create a raster that has 1 for areas where FRI > 40, and NA elsewhere
+good_for <- ifel(!is.na(fri), 1, NA)
+
+# Calculate number of cells left in each ecoregion
+vv <- exact_extract(good_for, sf::st_as_sf(eco), fun='sum')
+
+#----- How much of this area has burned? -------------------------------------#
+good_fire <- good_for + num_fires # Sum to NA out things not in our area
+good_fire <- good_fire - 1 # Get rid of the extra 1 from good_for
+
+# Calculate sum of burned cells left in each ecoregion
+v2 <- exact_extract(good_fire, sf::st_as_sf(eco), fun='sum')
+
+forest_dat <- data.frame(Name = eco$NA_L3NAME, 
+                         Sum_FRI = sum_fri,
+                         Total_Area = vv,
+                         Area_Burned = v2)
+write.csv(forest_dat, "../all_veg_cells_by_ecoregion_long_FRI.csv", row.names = F)
+
+
+rm(good_for, good_fire)
+gc()
+#-----------------------------------------------------------------------------#
+
+
+
+#-----------------------------------------------------------------------------#
 # Forest
 #-----------------------------------------------------------------------------#
 forest <- rast("../western_us_forest.tif")
 
+# Create a raster that masks out forest area on long FRIs
+good_for <- fri + forest
+good_for <- good_for - 1 # restoring FRI value
+
+#----- Sum of FRI by ecoregion -----------------------------------------------#
+sum_fri <- exact_extract(good_for, sf::st_as_sf(eco), fun='sum')
+
 # Create a raster that has 1 for areas of forest and FRI > 40, and NA elsewhere
 # We can start by summing; this will set NAs to NAs for both
-good_for <- fri + forest
 good_for <- ifel(!is.na(good_for), 1, NA)
 
 # Calculate number of cells left in each ecoregion
@@ -723,6 +839,7 @@ good_fire <- good_fire - 1 # Get rid of the extra 1 from good_for
 v2 <- exact_extract(good_fire, sf::st_as_sf(eco), fun='sum')
 
 forest_dat <- data.frame(Name = eco$NA_L3NAME, 
+                         Sum_FRI = sum_fri,
                          Total_Area = vv,
                          Area_Burned = v2)
 write.csv(forest_dat, "../forest_cells_by_ecoregion_long_FRI.csv", row.names = F)
@@ -730,15 +847,25 @@ write.csv(forest_dat, "../forest_cells_by_ecoregion_long_FRI.csv", row.names = F
 
 rm(forest, good_for, good_fire)
 gc()
+#-----------------------------------------------------------------------------#
+
+
 
 #-----------------------------------------------------------------------------#
 # Grassland
 #-----------------------------------------------------------------------------#
 grass <- rast("../western_us_grass.tif")
 
+# Create a raster that masks out grass area on long FRIs
+good_gr <- fri + grass
+good_gr <- good_gr - 1 # restoring FRI value
+
+#----- Sum of FRI by ecoregion -----------------------------------------------#
+sum_fri <- exact_extract(good_gr, sf::st_as_sf(eco), fun='sum')
+
 # Create a raster that has 1 for areas of forest and FRI > 40, and NA elsewhere
 # We can start by summing; this will set NAs to NAs for both
-good_gr <- fri + grass
+
 good_gr <- ifel(!is.na(good_gr), 1, NA)
 
 vv <- exact_extract(good_gr, sf::st_as_sf(eco), fun='sum')
@@ -751,6 +878,7 @@ v2 <- exact_extract(good_fire, sf::st_as_sf(eco), fun='sum')
 
 grass_dat <- data.frame(Name = eco$NA_L3NAME, 
                         Total_Area = vv,
+                        Sum_FRI = sum_fri,
                         Area_Burned = v2)
 write.csv(grass_dat, "../grass_cells_by_ecoregion_long_FRI.csv", row.names = F)
 rm(grass, good_gr, good_fire)
@@ -761,9 +889,15 @@ gc()
 #-----------------------------------------------------------------------------#
 shrub <- rast("../western_us_shrub.tif")
 
+# Create a raster that masks out shrub area on long FRIs
+good_shrub <- fri + shrub
+good_shrub <- good_shrub - 1 # restoring FRI value
+
+#----- Sum of FRI by ecoregion -----------------------------------------------#
+sum_fri <- exact_extract(good_shrub, sf::st_as_sf(eco), fun='sum')
+
 # Create a raster that has 1 for areas of forest and FRI > 40, and NA elsewhere
 # We can start by summing; this will set NAs to NAs for both
-good_shrub <- fri + shrub
 good_shrub <- ifel(!is.na(good_shrub), 1, NA)
 
 vv <- exact_extract(good_shrub, sf::st_as_sf(eco), fun='sum')
@@ -773,6 +907,7 @@ good_fire <- good_fire - 1 # Get rid of the extra 1 from good_shrub
 
 shrub_dat <- data.frame(Name = eco$NA_L3NAME, 
                         Total_Area = vv,
+                        Sum_FRI = sum_fri,
                         Area_Burned = v2)
 write.csv(shrub_dat, "../shrub_cells_by_ecoregion_long_FRI.csv", row.names = F)
 rm(shrub, good_shrub)
@@ -781,65 +916,107 @@ gc()
 ```
 
 ```{r calc-area-burned-by-eco-veg}
+#| results: asis
+
+hist_time <- 40
 
 #-----------------------------------------------------------------------------#
 # Do the FRP calculations by ecoregion. Note that there might be duplicates
 # for an ecoregion, as polygons might have been discontinuous
 #-----------------------------------------------------------------------------#
+
+cat("## Total area stats\n\n")
+#----- All veg ---------------------------------------------------------------#
+all_veg_dat <- read.csv("../all_veg_cells_by_ecoregion_long_FRI.csv")
+
+dat <- all_veg_dat %>% group_by(Name) %>% 
+  summarise(Area = sum(Total_Area), 
+            Burned = sum(Area_Burned),
+            FRI_Total = sum(Sum_FRI)) %>%
+  filter(Area > 0) %>%
+  mutate(FRP = if_else(Burned > 0, hist_time/(Burned/Area), NA)) %>%
+  mutate(Mean_FRI = FRI_Total / Area) %>%
+  mutate(Deficit = (FRP / Mean_FRI) - 1) %>%
+  mutate(Area = (Area * prod(res(fri)))/10000,
+         Burned = (Burned * prod(res(fri)))/10000) %>%
+  select(-FRI_Total)
+
+knitr::kable(dat, col.names = c("Level 3 Ecoregion", 
+                                "Total Area (ha)", 
+                                "Total Area Burned in 40 years (ha)",
+                                "FRP",
+                                "Mean FRI",
+                                "Deficit/Surplus"), digits=1)
+
+#----- Forest ----------------------------------------------------------------#
+cat("## Forest area stats\n\n")
 forest_dat <- read.csv("../forest_cells_by_ecoregion_long_FRI.csv")
 
 dat <- forest_dat %>% group_by(Name) %>% 
-  summarise(Area = sum(Total_Area), Burned = sum(Area_Burned)) %>%
+  summarise(Area = sum(Total_Area), 
+            Burned = sum(Area_Burned),
+            FRI_Total = sum(Sum_FRI)) %>%
   filter(Area > 0) %>%
-  mutate(FRG = if_else(Burned > 0, 40/(Burned/Area), NA)) %>%
+  mutate(FRP = if_else(Burned > 0, hist_time/(Burned/Area), NA)) %>%
+  mutate(Mean_FRI = FRI_Total / Area) %>%
+  mutate(Deficit = (FRP / Mean_FRI) - 1) %>%
   mutate(Area = (Area * prod(res(fri)))/10000,
-         Burned = (Burned * prod(res(fri)))/10000)
+         Burned = (Burned * prod(res(fri)))/10000) %>%
+  select(-FRI_Total)
 
 knitr::kable(dat, col.names = c("Level 3 Ecoregion", 
                                 "Forest Area (ha)", 
                                 "Forest Area Burned in 40 years (ha)",
-                                "FRG"), digits=1)
+                                "FRP",
+                                "Mean FRI",
+                                "Deficit/Surplus"), digits=1)
 
+#----- Grass -----------------------------------------------------------------#
+cat("## Grassland area stats\n\n")
 grass_dat <- read.csv("../grass_cells_by_ecoregion_long_FRI.csv")
 
 dat <- grass_dat %>% group_by(Name) %>% 
-  summarise(Area = sum(Total_Area), Burned = sum(Area_Burned)) %>%
+  summarise(Area = sum(Total_Area), 
+            Burned = sum(Area_Burned),
+            FRI_Total = sum(Sum_FRI)) %>%
   filter(Area > 0) %>%
-  mutate(FRG = if_else(Burned > 0, 40/(Burned/Area), NA)) %>%
+  mutate(FRP = if_else(Burned > 0, hist_time/(Burned/Area), NA)) %>%
+  mutate(Mean_FRI = FRI_Total / Area) %>%
+  mutate(Deficit = (FRP / Mean_FRI) - 1) %>%
   mutate(Area = (Area * prod(res(fri)))/10000,
-         Burned = (Burned * prod(res(fri)))/10000)
+         Burned = (Burned * prod(res(fri)))/10000) %>%
+  select(-FRI_Total)
 
 knitr::kable(dat, col.names = c("Level 3 Ecoregion", 
                                 "Grass Area (ha)", 
                                 "Grass Area Burned in 40 years (ha)",
-                                "FRG"), digits=1)
+                                "FRP",
+                                "Mean FRI",
+                                "Deficit/Surplus"), digits=1)
 
+
+#----- Shrubs ----------------------------------------------------------------#
+cat("## Shrubland area stats\n\n")
 shrub_dat <- read.csv("../shrub_cells_by_ecoregion_long_FRI.csv")
 
 dat <- shrub_dat %>% group_by(Name) %>% 
-  summarise(Area = sum(Total_Area), Burned = sum(Area_Burned)) %>%
+  summarise(Area = sum(Total_Area), 
+            Burned = sum(Area_Burned),
+            FRI_Total = sum(Sum_FRI)) %>%
   filter(Area > 0) %>%
-  mutate(FRG = if_else(Burned > 0, 40/(Burned/Area), NA)) %>%
+  mutate(FRP = if_else(Burned > 0, hist_time/(Burned/Area), NA)) %>%
+  mutate(Mean_FRI = FRI_Total / Area) %>%
+  mutate(Deficit = (FRP / Mean_FRI) - 1) %>%
   mutate(Area = (Area * prod(res(fri)))/10000,
-         Burned = (Burned * prod(res(fri)))/10000)
+         Burned = (Burned * prod(res(fri)))/10000) %>%
+  select(-FRI_Total)
 
 knitr::kable(dat, col.names = c("Level 3 Ecoregion", 
                                 "Shrub Area (ha)", 
                                 "Shrub Area Burned in 40 years (ha)",
-                                "FRG"), digits=1)
-```
-
-```{r calculate-mean-historical-fri-ecoregion}
-#| eval: false
-fri <- rast("../west_us_long_FRI.tif")
-eco <- vect("../Data/level_3_ecoregion/eco_region.shp")
-eco <- project(eco, fri)
-
-#----- Total mean FRI by ecoregion -------------------------------------------#
-vt <- exact_extract(fri, sf::st_as_sf(eco), fun='mean')
-#forest_dat <- data.frame(Name = eco$NA_L3NAME, 
-#                         Total_Area = vv,
-#                         Area_Burned = v2)
+                                "FRP",
+                                "Mean FRI",
+                                "Deficit/Surplus"), digits=1)
 ```
 
 \newpage
@@ -1331,4 +1508,4 @@ For grass and shrub comparisons, grass looks pretty good. Shrubs - we are gonna 
 
 For long FRI groups, what I have calculated is the contemporary fire regime. Mean FRI on the ecoregion level is equal to the historical fire rotation period. So deficit/surplus is contemporary divided by historical.
 
-Analysis: calculating deficit / surplus for all pixels wheren FRI < 40, regardless of vegetation type (exluding developed areas). Subset by veg type by masking out our veg rasters. Then do an equivalent approach at ecoregion level. Ecoregion level total deficit/surplus, then forest deficit/surplus, grassland, shrub.
+Analysis: calculating deficit / surplus for all pixels where FRI < 40, regardless of vegetation type (exluding developed areas). Subset by veg type by masking out our veg rasters. Then do an equivalent approach at ecoregion level. Ecoregion level total deficit/surplus, then forest deficit/surplus, grassland, shrub.
