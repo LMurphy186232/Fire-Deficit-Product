@@ -111,8 +111,6 @@ No locations in Alaska have a FRI $\leq$ 40 years. No further products will be c
 
 **Output:** raster called "west_us_FRI.tif", of CONUS cropped to the WFFRC study area, with a map of Landfire's 2016 FRI_ALLFIR values where FRI_ALLFIR is $\leq$ 40. (See appendix for summary Landfire documentation.)
 
-
-
 ```{r create-western-us-fri-rast}
 #| eval: FALSE
 
@@ -284,7 +282,7 @@ A value of 1 indicates forest according to our definition, NA for all others. Ou
 
 Note: we originally tried tree cover at 50-100%, but 20% was a closer approximation to the LCMS definition of forest, and helped sort out some mixed cover classes.
 
-We originally used a definition of forest that was the intersection between Landfire and LCMS, but it turns out that LCMS does not do a good job of correctly differentiating between shrubs and trees, which is crucial for many of our areas. The exercise did help validate the Landfire cover classes. 
+We originally used a definition of forest that was the intersection between Landfire and LCMS, but it turns out that LCMS does not do a good job of correctly differentiating between shrubs and trees, which is crucial for many of our areas. The exercise did help validate the Landfire cover classes.
 
 (For a complete list of the cover classes, see the appendix.)
 
@@ -340,7 +338,6 @@ gc()
 writeRaster(evc, "../western_us_forest.tif", overwrite = TRUE)
 ```
 
-
 ```{r}
 forest <- rast("../western_us_forest.tif")
 plot(forest, axes=F, main="Western US forest cover", col="darkgreen", legend = F)
@@ -381,6 +378,7 @@ writeRaster(frg_crop, "../temp_rasters/frg_crop.tif", overwrite=T)
 rm(frg_crop)
 gc()
 ```
+
 ```{r create-western-us-frg-rast}
 #| eval: FALSE
 
@@ -427,6 +425,7 @@ levels(dff) <- data.frame(ID = 1:4,
                  "Stand replacing group IV", "Stand replacing group V"))
 writeRaster(dff, "../western_us_frg_forest.tif", overwrite=T)
 ```
+
 ```{r}
 dff <- rast("../western_us_frg_forest.tif")
 
@@ -450,6 +449,7 @@ fors <- rast("../western_us_forest.tif")
 fordef <- mask(defi, fors)
 writeRaster(fordef, "../forest_deficit.tif", overwrite=T)
 ```
+
 ```{r}
 fordef <- rast("../forest_deficit.tif")
 plot(fordef, axes=F,
@@ -461,7 +461,6 @@ plot(states, add=T, fill=NULL)
 rm(fordef)
 invisible(gc())
 ```
-
 
 \newpage
 
@@ -513,7 +512,6 @@ gc()
 writeRaster(evc, "../western_us_grass.tif", overwrite = TRUE)
 ```
 
-
 ```{r}
 grass <- rast("../western_us_grass.tif")
 plot(grass, axes=F, main="Western US grass cover", col="darkgoldenrod3", legend = F)
@@ -550,6 +548,7 @@ levels(dff) <- data.frame(ID = 1:4,
                  "Stand replacing group IV", "Stand replacing group V"))
 writeRaster(dff, "../western_us_frg_grass.tif", overwrite=T)
 ```
+
 ```{r}
 dff <- rast("../western_us_frg_grass.tif")
 
@@ -573,6 +572,7 @@ fors <- rast("../western_us_grass.tif")
 fordef <- mask(defi, fors)
 writeRaster(fordef, "../grass_deficit.tif", overwrite=T)
 ```
+
 ```{r}
 fordef <- rast("../grass_deficit.tif")
 plot(fordef, axes=F,
@@ -662,6 +662,7 @@ levels(dff) <- data.frame(ID = 1:4,
                  "Stand replacing group IV", "Stand replacing group V"))
 writeRaster(dff, "../western_us_frg_shrub.tif", overwrite=T)
 ```
+
 ```{r}
 dff <- rast("../western_us_frg_shrub.tif")
 
@@ -685,6 +686,7 @@ fors <- rast("../western_us_shrub.tif")
 fordef <- mask(defi, fors)
 writeRaster(fordef, "../shrub_deficit.tif", overwrite=T)
 ```
+
 ```{r}
 fordef <- rast("../shrub_deficit.tif")
 plot(fordef, axes=F,
@@ -709,9 +711,9 @@ $$FRP = \frac{t}{\sum a_i / A} $$
 
 where *t* is the time period evaluated, $a_i$ is annual area burned in year *i*, and *A* is the size of the study area.
 
-This is the contemporary FRP. We can take the mean ecoregion FRI as the historical value. Ecoregion-level deficit / surplus will thus be contemporary divided by historical. 
+This is the contemporary FRP. We can take the mean ecoregion FRI as the historical value. Ecoregion-level deficit / surplus will thus be contemporary divided by historical.
 
-**Need a double check here to make sure I've understood this right:** When considering the area *A* and the burned areas $a_i$, I am only considering pixels within the subsetted areas: within the ecoregion, within those areas where FRI > 40 years, within the vegetation type in question. Same when calculating mean FRI.
+**Need a double check here to make sure I've understood this right:** When considering the area *A* and the burned areas $a_i$, I am only considering pixels within the subsetted areas: within the ecoregion, within those areas where FRI \> 40 years, within the vegetation type in question. Same when calculating mean FRI.
 
 Here are ecoregion-level tables of FRP.
 
@@ -1034,16 +1036,48 @@ There are 4 possible fire return interval codes:
 
 From the metadata for the fire return interval product:
 
-The Fire Return Interval (FRI) product quantifies the average period between fires under the presumed historical fire regime. FRI is intended to describe one component of historical fire regime characteristics in the context of the broader historical time period represented by the LANDFIRE Biophysical Settings (BpS) product and BpS Model documentation. To learn more about FRI go to https://landfire.gov/fire-regime/fri. At the release of LF 2016 Remap Fire Regime Groups (FRG_NEW), Percent of Low-severity Fire (PRC_SURFAC), Percent of Mixed-severity Fire (PRC_MIXED), Percent of Replacement-severity Fire (PRC_REPLAC), and Fire Return Interval (FRI_ALLFIR) were included as attributes in the Biophysical Settings (BPS) product. Then in 2024 these products became stand-alone products once again. With the 3 Percent Severity products merged into a single product called Percent Fire Severity (PFS). These products can now be found in both places, as attributes of BPS and as their own individual products.
+> The Fire Return Interval (FRI) product quantifies the average period between fires under the presumed historical fire regime. FRI is intended to describe one component of historical fire regime characteristics in the context of the broader historical time period represented by the LANDFIRE Biophysical Settings (BpS) product and BpS Model documentation. To learn more about FRI go to https://landfire.gov/fire-regime/fri. At the release of LF 2016 Remap Fire Regime Groups (FRG_NEW), Percent of Low-severity Fire (PRC_SURFAC), Percent of Mixed-severity Fire (PRC_MIXED), Percent of Replacement-severity Fire (PRC_REPLAC), and Fire Return Interval (FRI_ALLFIR) were included as attributes in the Biophysical Settings (BPS) product. Then in 2024 these products became stand-alone products once again. With the 3 Percent Severity products merged into a single product called Percent Fire Severity (PFS). These products can now be found in both places, as attributes of BPS and as their own individual products.
 
-LF 2016 Remap (LF Remap) is a comprehensive mapping effort that uses recent data to create a new base map product suite that better represents contemporary conditions. LF Remap represents circa 2016 ground conditions and is designed to produce vegetation, disturbance, and fuels products that inform wildland fire and ecological decision systems. LF Remap has improved past methodologies and processes to incorporate current satellite imagery, contemporary data sources, and the latest software and hardware technologies. Final LF Remap products offer significant improvements to all previous LF versions (read more about versions here https://www.landfire.gov/lf_schedule.php). LF Remap products are designed to facilitate national and regional level strategic fire and resource management planning and reporting of management activities. The principal purposes of the products include providing, 1) national level, landscape scale geospatial products to support fire and fuels management planning, and 2) consistent fuels products to support fire planning, analysis, and budgeting to evaluate fire management alternatives. Products are created at a 30 meter raster; however, the applicability of products varies by location and specific use. LF products were designed to support 1) national (all states) strategic planning, 2) regional (single large states or groups of smaller states), and 3) strategic/tactical planning for large sub regional landscapes and Fire Management Units (FMUs) (such as significant portions of states or multiple federal administrative entities). The applicability of LF products to support fire and land management planning on smaller areas will vary by product, location, and specific use. Managers and planners must evaluate LF products according to the scale and requirements specific to their needs.
+> LF 2016 Remap (LF Remap) is a comprehensive mapping effort that uses recent data to create a new base map product suite that better represents contemporary conditions. LF Remap represents circa 2016 ground conditions and is designed to produce vegetation, disturbance, and fuels products that inform wildland fire and ecological decision systems. LF Remap has improved past methodologies and processes to incorporate current satellite imagery, contemporary data sources, and the latest software and hardware technologies. Final LF Remap products offer significant improvements to all previous LF versions (read more about versions here https://www.landfire.gov/lf_schedule.php). LF Remap products are designed to facilitate national and regional level strategic fire and resource management planning and reporting of management activities. The principal purposes of the products include providing, 1) national level, landscape scale geospatial products to support fire and fuels management planning, and 2) consistent fuels products to support fire planning, analysis, and budgeting to evaluate fire management alternatives. Products are created at a 30 meter raster; however, the applicability of products varies by location and specific use. LF products were designed to support 1) national (all states) strategic planning, 2) regional (single large states or groups of smaller states), and 3) strategic/tactical planning for large sub regional landscapes and Fire Management Units (FMUs) (such as significant portions of states or multiple federal administrative entities). The applicability of LF products to support fire and land management planning on smaller areas will vary by product, location, and specific use. Managers and planners must evaluate LF products according to the scale and requirements specific to their needs.
+
+## Where does FRI come from?
+
+We want to know the inputs into the fire regime maps to know what we can make them say. For instance, if FRI is partially modeled based on vegetation type, it makes no sense to do analysis comparing FRI to vegetation type because OF COURSE they will correlate.
+
+From the technical documentation:
+
+> "The fire return intervals and percentage of expected severity for pre-European fire regimes were revised from LF National with updated BpS \[biophysical settings\] descriptions. The descriptions were updated with the input of more than 800 experts around the country during 5 years of workshops (Blankenship and others, 2021)."
+
+The full citation: Blankenship, K., Swaty, R., Hall, K.R., Hagen, S., Pohl, K., Shlisky Hunt, A., Patton, J., Frid, L., and Smith, J., 2021, Vegetation dynamics models—A comprehensive set for natural resource assessment and planning in the United States: Ecosphere, v. 12, no. 4, art. e03484, 22 p. <https://doi.org/10.1002/ecs2.3484>
+
+Notes from Blankenship et al:
+
+> We stratified vegetation systems according to LANDFIRE's Biophysical Setting (BpS) classification system (Rollins 2009). Models for each BpS and their accompanying description documents (collectively referred to as the BpS model library) synthesize fundamental ecological information about ecosystem dynamics, structure, composition, and disturbance regimes.
+
+> The BpS model library—developed collaboratively by more than 800 experts—includes over 900 vegetation dynamic models and associated BpS descriptions for different terrestrial vegetation communities covering the USA and its territories ([LANDFIRE 2020a](https://esajournals.onlinelibrary.wiley.com/doi/10.1002/ecs2.3484#ecs23484-bib-0037)).
+
+> To support the goal of providing data to prioritize fire and fuel management activities, LANDFIRE developed historical reference conditions for vegetation composition and fire regimes using a simulation modeling approach. While the details of the approach varied slightly between different Program development phases, vegetation dynamic models, called state-and-transition simulation models (STSMs), were a key component of all phases (Appendix S1). STSMs divide an ecosystem into discrete states linked by pathways that define the rates of growth and frequency and effects of disturbances ([https://besjournals.onlinelibrary.wiley.com/doi/10.1111/2041-210X.12597](Daniel%20et%20al.%202016)). LANDFIRE used STSMs to estimate reference fire regime and vegetation conditions. Then using a similarity index, called vegetation condition class (Barrett et al. 2010), the Program measured the difference between its modeled historical vegetation reference conditions and current conditions mapped from satellite imagery (Rollins 2009).
+
+> Because literature alone was insufficient to fully parameterize a set of STSMs that could represent the breadth of ecosystems across the USA (Long et al. 2006), LANDFIRE chose an expert-based approach to develop the BpS model library. The Program identified a set of modeling leaders, including the authors, to coordinate the effort. We invited experienced land and fire managers, natural resource specialists, biologists, ecologists, and others with knowledge of ecosystem composition, structure, and disturbance regimes to collaborate and co-create a national BpS model library.
+
+> Each LANDFIRE STSM and its accompanying narrative represents a BpS—a potential vegetation concept reflecting the native vegetation community that was likely to have existed in the pre-settlement reference period, based on an approximation of historical disturbance regimes and the current biophysical environment ([https://www.publish.csiro.au/wf/WF08088](Rollins%202009)).
+
+> In workshops and follow-up efforts, modeling leaders and developers conceived an STSM for each BpS by dividing it into states (also called succession classes) and defining the causes and rates of transitions between them (Fig. 2). Models were initially developed in the Vegetation Dynamics Development Tool (ESSA 2007) and later in SyncroSim's ST-Sim package (ApexRMS 2019; Appendix S1). Both are flexible and free software platforms for developing STSMs.
+
+> To describe how vegetation transitioned among the various states, model developers defined growth and disturbance pathways for each STSM and represented these processes as deterministic or probabilistic transitions. Model developers used deterministic transitions to represent growth or successional trajectories and probabilistic transitions to represent disturbances. Given LANDFIRE's use of the STSMs to define reference fire regimes, we asked model developers to further specify fire transitions by severity class based on the percent top-kill of the upper vegetation canopy: 0–25% for surface, 25–75% for mixed, and greater than 75% for replacement severity. Model developers included all important system drivers, such as those that could have delayed natural succession or caused a transition to a new state as they built and tested their STSMs.
+
+> Model developers ran each STSM to estimate how the set of states and transitions they had specified for a BpS resulted in an equilibrium state distribution and fire regime under pre-settlement conditions (i.e., the LANDFIRE reference condition).
+
+![A LANDFIRE STSM represents the vegetation dynamics of a BpS. This graphic representation of the Inter-Mountain Basins Big Sagebrush Steppe BpS STSM (LANDFIRE 2020d) shows the rate of growth between states and the frequency and impact of disturbances. Each state represents a discrete developmental stage defined by its vegetation cover, structure, and age range. The impact and frequency of disturbances is described by the starting and ending state and an annual probability of occurrence indicated by the value associated with each probabilistic transition pathway. All fires in this STSM are considered replacement fires following LANDFIRE's definition because over 75% of the dominant herbaceous and shrub species in this BpS are top-killed by fire.](figs/stsm_fig.png)
+
+> To produce a set of STSMs with comparable levels of detail across the country and to ensure compatibility with other LANDFIRE products, we designed modeling rules, such as restricting model developers to defining five or fewer states (Appendix S5: Table S1). In addition, we standardized and constrained the software functions available to model developers to help ensure consistency in outputs and facilitate quality checking hundreds of STSMs (Appendix S5: Table S2). Advanced modeling functions, such as simulating temporal variability in disturbance regimes, were prohibited because they required additional data that were unavailable for most locations and disturbance types.
 
 \newpage
 
 # Appendix - LANDFIRE Fire Regime Group Codes (FRG)
 
 | FRG_NEW | Fire Regime Group |
-|------------------------|------------------------------------------------|
+|------------------------|-----------------------------------------------|
 | I-A | Percent replacement fire less than 66.7%, fire return interval 0 to 5 years. |
 | I-B | Percent replacement fire less than 66.7%, fire return interval 6 to 15 years. |
 | I-C | Percent replacement fire less than 66.7%, fire return interval 16 to 35 years. |
@@ -1508,4 +1542,4 @@ For grass and shrub comparisons, grass looks pretty good. Shrubs - we are gonna 
 
 For long FRI groups, what I have calculated is the contemporary fire regime. Mean FRI on the ecoregion level is equal to the historical fire rotation period. So deficit/surplus is contemporary divided by historical.
 
-Analysis: calculating deficit / surplus for all pixels where FRI < 40, regardless of vegetation type (exluding developed areas). Subset by veg type by masking out our veg rasters. Then do an equivalent approach at ecoregion level. Ecoregion level total deficit/surplus, then forest deficit/surplus, grassland, shrub.
+Analysis: calculating deficit / surplus for all pixels where FRI \< 40, regardless of vegetation type (exluding developed areas). Subset by veg type by masking out our veg rasters. Then do an equivalent approach at ecoregion level. Ecoregion level total deficit/surplus, then forest deficit/surplus, grassland, shrub.
