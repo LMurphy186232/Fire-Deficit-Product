@@ -2,6 +2,8 @@
 title: "Fire deficit product"
 #format: pdf
 format: docx
+
+#reference-doc: style-reference.docx In an attempt to adjust font sizes - not worth it
 editor: source
 author: Lora Murphy
 date: today
@@ -20,6 +22,7 @@ knitr::opts_chunk$set(echo = FALSE)
 knitr::opts_chunk$set(messages = FALSE)
 knitr::opts_chunk$set(warnings = FALSE)
 knitr::opts_chunk$set(results = 'asis')
+#\options(knitr.table.format = "latex")
 terraOptions(tempdir="D:/workspace/Lora/temp") # Terminator
 #terraOptions(tempdir="D:/Lora/temp") # Groot
 ```
@@ -943,9 +946,13 @@ dat <- all_veg_dat %>% group_by(Name) %>%
          Burned = (Burned * prod(res(fri)))/10000) %>%
   select(-FRI_Total)
 
+#----- Make this nice and readable -------------------------------------------#
+dat$Area   <- prettyNum(as.character(round(dat$Area, 0))  , big.mark=",")
+dat$Burned <- prettyNum(as.character(round(dat$Burned, 0)), big.mark=",")
+
 knitr::kable(dat, col.names = c("Level 3 Ecoregion", 
                                 "Total Area (ha)", 
-                                "Total Area Burned in 40 years (ha)",
+                                "Total Area Burned (ha)",
                                 "FRP",
                                 "Mean FRI",
                                 "Deficit/Surplus"), digits=1)
@@ -966,9 +973,13 @@ dat <- forest_dat %>% group_by(Name) %>%
          Burned = (Burned * prod(res(fri)))/10000) %>%
   select(-FRI_Total)
 
+#----- Make this nice and readable -------------------------------------------#
+dat$Area   <- prettyNum(as.character(round(dat$Area, 0))  , big.mark=",")
+dat$Burned <- prettyNum(as.character(round(dat$Burned, 0)), big.mark=",")
+
 knitr::kable(dat, col.names = c("Level 3 Ecoregion", 
-                                "Forest Area (ha)", 
-                                "Forest Area Burned in 40 years (ha)",
+                                "Total Area (ha)", 
+                                "Total Area Burned (ha)",
                                 "FRP",
                                 "Mean FRI",
                                 "Deficit/Surplus"), digits=1)
@@ -989,13 +1000,16 @@ dat <- grass_dat %>% group_by(Name) %>%
          Burned = (Burned * prod(res(fri)))/10000) %>%
   select(-FRI_Total)
 
+#----- Make this nice and readable -------------------------------------------#
+dat$Area   <- prettyNum(as.character(round(dat$Area, 0))  , big.mark=",")
+dat$Burned <- prettyNum(as.character(round(dat$Burned, 0)), big.mark=",")
+
 knitr::kable(dat, col.names = c("Level 3 Ecoregion", 
-                                "Grass Area (ha)", 
-                                "Grass Area Burned in 40 years (ha)",
+                                "Total Area (ha)", 
+                                "Total Area Burned (ha)",
                                 "FRP",
                                 "Mean FRI",
                                 "Deficit/Surplus"), digits=1)
-
 
 #----- Shrubs ----------------------------------------------------------------#
 cat("## Shrubland area stats\n\n")
@@ -1013,9 +1027,13 @@ dat <- shrub_dat %>% group_by(Name) %>%
          Burned = (Burned * prod(res(fri)))/10000) %>%
   select(-FRI_Total)
 
+#----- Make this nice and readable -------------------------------------------#
+dat$Area   <- prettyNum(as.character(round(dat$Area, 0))  , big.mark=",")
+dat$Burned <- prettyNum(as.character(round(dat$Burned, 0)), big.mark=",")
+
 knitr::kable(dat, col.names = c("Level 3 Ecoregion", 
-                                "Shrub Area (ha)", 
-                                "Shrub Area Burned in 40 years (ha)",
+                                "Total Area (ha)", 
+                                "Total Area Burned (ha)",
                                 "FRP",
                                 "Mean FRI",
                                 "Deficit/Surplus"), digits=1)
