@@ -1,0 +1,115 @@
+---
+title: "Fire deficit analysis"
+format: revealjs
+editor: source
+author: Lora Murphy
+date: today
+---
+
+```{r setup, include=FALSE}
+library(terra)
+library(sf)
+library(kableExtra)
+library(ggplot2)
+library(exactextractr)
+library(tidyverse)
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(messages = FALSE)
+knitr::opts_chunk$set(warnings = FALSE)
+knitr::opts_chunk$set(results = 'asis')
+#\options(knitr.table.format = "latex")
+terraOptions(tempdir="D:/workspace/Lora/temp") # Terminator
+#terraOptions(tempdir="D:/Lora/temp") # Groot
+```
+
+```{r load-handy-shapefiles}
+fri <- rast("../temp_rasters/all_fri_vals.tif")
+# This used to use the tigris package, but one day the data wasn't available on
+# line and the code broke. So I downloaded a shapefile instead
+#states <- states(cb=TRUE)
+states <- vect("../Data/s_05mr24.shp")
+states <- project(states, fri)
+
+eco <- vect("../Data/level_3_ecoregion/eco_region.shp")
+eco <- project(eco, fri)
+
+#----- Crop level 3 ecoregions to study domain -------------------------------#
+eco <- crop(eco, fri)
+
+#----- And to states ---------------------------------------------------------#
+eco <- crop(eco, states)
+```
+
+```{r fri-stats-by-ecoregion}
+#| eval: FALSE
+
+fri <- rast("../temp_rasters/all_fri_vals.tif")
+econames <- unique(eco$NA_L3NAME)
+windows()
+for (single_eco in econames) {
+  filename <- paste0("figs/fri-", gsub("/", "-", single_eco), ".png")
+
+  #if (!file.exists(filename)) {
+    eco_inds <- which(eco$NA_L3NAME == single_eco)
+    fri_eco <- crop(fri, eco[eco_inds])
+    fri_eco <- mask(fri_eco, eco[eco_inds])
+    plot(fri_eco, main=paste(eco$NA_L3NAME[eco_inds], "FRI"), axes=F)
+    savePlot(paste0("figs/map-", gsub("/", "-", single_eco), ".png"), type="png")
+    dat <- values(fri_eco, dataframe=T)
+    
+    p1<- ggplot(data = dat, aes(x=BPS_NAME)) + 
+      geom_histogram() + theme_bw() +
+      scale_x_log10() +
+      scale_y_log10() +
+      labs(x = "FRI", title = single_eco)
+    ggsave(filename, p1)
+    
+    #suppressMessages(print(p1))
+  #}
+}
+```
+
+```{r deficit-stats-by-ecoregion}
+#| eval: FALSE
+
+fri <- rast("../western_us_fire_deficit.tif")
+econames <- unique(eco$NA_L3NAME)
+for (single_eco in econames) {
+  filename <- paste0("figs/deficit-", gsub("/", "-", single_eco), ".png")
+  
+  #if (!file.exists(filename)) {
+  eco_inds <- which(eco$NA_L3NAME == single_eco)
+  fri_eco <- crop(fri, eco[eco_inds])
+  fri_eco <- mask(fri_eco, eco[eco_inds])
+  dat <- values(fri_eco, dataframe=F)
+  dat <- data.frame(layer = dat[!is.na(dat)])
+  
+  percent_def <- round(sum(dat$layer < 0)/nrow(dat) * 100., 1)
+  
+  p1 <- ggplot(dat, aes(x=layer)) +
+    stat_density(aes(y=..count..), color="black", fill="blue", alpha=0.3) +
+    #scale_x_continuous(trans="log1p", expand=c(0,0)) +
+    scale_x_continuous(breaks=c(seq(-1, 0, 0.1), 1,2,4,10,100), trans="log1p", expand=c(0,0)) +
+    labs(x = "Fire deficit/surplus", title = paste0(single_eco, " (", 
+                                                    percent_def, "% of area in deficit)")) +
+    theme_bw()
+  ggsave(filename, p1)
+  
+  #suppressMessages(print(p1))
+  #}
+}
+```
+
+## Columbia plateau
+
+::: {.columns}
+::: {.column width="33%"}
+![Image 1](figs/deficit-Arizona-New Mexico Mountains.png)
+:::
+::: {.column width="33%"}
+![Image 2](figs/fri-Arizona-New Mexico Mountains.png)
+:::
+::: {.column width="33%"}
+![Image 3](figs/map-Arizona-New Mexico Mountains.png)
+:::
+:::
