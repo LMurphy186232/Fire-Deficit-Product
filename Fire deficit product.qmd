@@ -27,6 +27,10 @@ terraOptions(tempdir="D:/workspace/Lora/temp") # Terminator
 #terraOptions(tempdir="D:/Lora/temp") # Groot
 ```
 
+# Summary tables
+
+
+
 # Landfire historical fire regime / fire return interval
 
 Fire return interval data is from [Landfire](https://landfire.gov/fire-regime/fri). Let's check the completeness of the raster - looks pretty complete.
@@ -702,6 +706,25 @@ rm(fordef)
 invisible(gc())
 ```
 
+```{r make-all-veg-rast}
+#----- For later analysis - make a raster combining all of our vegetation types
+
+forest <- rast("../western_us_forest.tif")
+grass  <- rast("../western_us_grass.tif")
+shrub  <- rast("../western_us_shrub.tif")
+
+#----- NAs become 0, so we can add -------------------------------------------#
+forest <- subst(forest, NA, 0)
+grass  <- subst(grass , NA, 0)
+shrub  <- subst(shrub , NA, 0)
+
+all_veg <- forest + grass + shrub
+all_veg <- subst(all_veg, 0, NA)
+
+writeRaster(all_veg, "../temp_rasters/combined_veg_area.tif", overwrite=T)
+```
+
+
 \newpage
 
 # Fire deficit / surplus for FRI $\geq$ 40 years
@@ -718,7 +741,7 @@ This is the contemporary FRP. We can take the mean ecoregion FRI as the historic
 
 **Need a double check here to make sure I've understood this right:** When considering the area *A* and the burned areas $a_i$, I am only considering pixels within the subsetted areas: within the ecoregion, within those areas where FRI \> 40 years, within the vegetation type in question. Same when calculating mean FRI.
 
-Here are ecoregion-level tables of FRP.
+All areas with FRI > 40 years, ignoring vegetation type:
 
 ```{r create-western-us-longfri-rast}
 #| eval: FALSE
@@ -784,8 +807,13 @@ eco <- crop(eco, fri)
 eco <- crop(eco, states)
 
 #-----------------------------------------------------------------------------#
-# All veg area
+# All veg area - for forests, grasslands, and shrublands combined (ignoring
+# all else)
 #-----------------------------------------------------------------------------#
+all_veg <- rast("../temp_rasters/combined_veg_area.tif")
+# Create a raster that masks out combined veg area area on long FRIs
+good_veg <- fri + all_veg
+good_veg <- good_veg - 1 # restoring FRI value
 
 #----- Sum of FRI by ecoregion -----------------------------------------------#
 sum_fri <- exact_extract(fri, sf::st_as_sf(eco), fun='sum')
@@ -811,7 +839,7 @@ forest_dat <- data.frame(Name = eco$NA_L3NAME,
 write.csv(forest_dat, "../all_veg_cells_by_ecoregion_long_FRI.csv", row.names = F)
 
 
-rm(good_for, good_fire)
+rm(good_veg, all_veg, good_fire)
 gc()
 #-----------------------------------------------------------------------------#
 
