@@ -1,13 +1,9 @@
 ---
 title: "Fire deficit product"
-#format: pdf
 format: docx
-
-#reference-doc: style-reference.docx In an attempt to adjust font sizes - not worth it
 editor: source
 author: Lora Murphy
 date: today
-output-dir: ".." # This doesn't work
 output-file: "Fire deficit product"
 ---
 
@@ -18,6 +14,8 @@ library(kableExtra)
 library(ggplot2)
 library(exactextractr)
 library(tidyverse)
+library(tidyterra)
+library(patchwork)
 knitr::opts_chunk$set(echo = FALSE)
 knitr::opts_chunk$set(messages = FALSE)
 knitr::opts_chunk$set(warnings = FALSE)
@@ -27,7 +25,421 @@ terraOptions(tempdir="D:/workspace/Lora/temp") # Terminator
 #terraOptions(tempdir="D:/Lora/temp") # Groot
 ```
 
-# Summary tables
+```{r spark-prep}
+#-----------------------------------------------------------------------------#
+# PLEASE NOTE:
+# These chunks are now out of order overall. SPARK stuff must be run after the
+# raster production later in this document (all marked to eval: false). This
+# is rearranged so I can show the latest results first.
+#-----------------------------------------------------------------------------#
+fri <- terra::rast("../temp_rasters/all_fri_vals.tif")
+veg <- terra::rast("../temp_rasters/combined_veg_area.tif")
+
+#----- Load SPARK watersheds -------------------------------------------------#
+spark <- terra::vect("../../Spark counties shapefile/spark_watersheds.shp")
+spark <- terra::project(spark, fri)
+
+#----- Some common aesthetics for plotting -----------------------------------#
+blank_axes <- theme(axis.title.x=element_blank(),
+                    axis.text.x=element_blank(),
+                    axis.ticks.x=element_blank(),
+                    axis.title.y=element_blank(),
+                    axis.text.y=element_blank(),
+                    axis.ticks.y=element_blank(),
+                    panel.border = element_blank())
+
+fri_scale <- scale_fill_grass_c(na.value = NA, name="Years")
+veg_scale <- scale_fill_manual(values = 
+                                 c("darkgreen", 
+                                   "darkgoldenrod3", 
+                                   "burlywood4"), 
+                               name = "",
+                               na.translate=F)
+forest_type_scale <- 
+  scale_fill_grass_d(name = "", na.translate = FALSE,
+                     labels = c("Frequent fire \n(FRI < 20)", 
+                                "Frequent fire \n(FRI 20-40)", 
+                                "Infrequent fire"))
+deficit_scale <- scale_fill_grass_c(na.value = NA, name="Deficit < 0")
+
+#----- Load ecoregions with long-term FRI ------------------------------------#
+long_forst_def <- terra::rast("../temp_rasters/eco_forest_def.tif")
+long_grass_def <- terra::rast("../temp_rasters/eco_grass_def.tif")
+long_shrub_def <- terra::rast("../temp_rasters/eco_shrub_def.tif")
+
+short_def <- terra::rast("../western_us_fire_deficit.tif")
+
+
+ha_to_acres <- 2.47105
+
+#plot(eco,range=c(-1,10),fill_range=T)
+```
+
+```{r spark-regions}
+
+all_sparks <- unique(spark$SPARK)
+all_sparks <- all_sparks[-grep("AK -", all_sparks)]
+all_sparks <- all_sparks[-grep("BC -", all_sparks)]
+
+for (spark_name in all_sparks) {
+  
+  one_spark <- spark[spark$SPARK == spark_name]
+  
+  cat("##", spark_name, "\n")
+  
+  #-----------------------------------------------------------------------------#
+  # Make a nice map of all vegetation and FRI to amuse the reader
+  #-----------------------------------------------------------------------------#
+  
+  #----- Clip FRI and display --------------------------------------------------#
+  fri_crop <- terra::crop(fri     , one_spark)
+  fri_crop <- terra::mask(fri_crop, one_spark)
+  
+  #plot(fri_crop)
+  
+  suppressMessages(fri_plot <- ggplot() + 
+                     geom_spatraster(data = fri_crop) +
+                     geom_spatvector(data = one_spark, fill=NA) +
+                     theme_bw() +
+                     blank_axes +
+                     ggtitle("Fire return interval") +
+                     fri_scale)
+  
+  #----- Clip veg and display --------------------------------------------------#
+  veg_crop <- terra::crop(veg     , one_spark)
+  veg_crop <- terra::mask(veg_crop, one_spark)
+  
+  
+  suppressMessages(veg_map_plot <- ggplot() + 
+                     geom_spatraster(data = veg_crop) +
+                     geom_spatvector(data = one_spark, fill=NA) +
+                     theme_bw() +
+                     blank_axes +
+                     ggtitle("Vegetation map") +
+                     veg_scale)
+  
+  #-----------------------------------------------------------------------------#
+  
+  
+  
+  #-----------------------------------------------------------------------------#
+  # Forests.
+  # Frequent fire forests FRI 0-20 years
+  # Frequent fire forest FRI 20-40
+  # Infrequent fire forests (FRI > 40)
+  #-----------------------------------------------------------------------------#
+  #cat("## Forest area\n\n")
+  
+  #----- ID forests by fire frequency ------------------------------------------#
+  forest_mask <- terra::ifel(veg_crop == "Forest", 1, NA)
+  forest_fri <- terra::mask(fri_crop, forest_mask)
+  
+  forest_mat <- cbind(c(0,20,40), c(19, 39, 10000), 1:3)
+  forest_type <- terra::classify(forest_fri, forest_mat)
+  levels(forest_type) <- data.frame(ID = 1:3, 
+                                    category = c(
+                                      "Frequent fire (FRI < 20)", 
+                                      "Frequent fire (FRI 20-40)", 
+                                      "Infrequent fire"))
+  rm(forest_fri, forest_mask)
+  invisible(gc())
+  
+  
+  #----- Make a total fire deficit map, including long deficit -----------------#
+  long_crop <- terra::crop(long_forst_def, one_spark)
+  long_crop <- terra::mask(long_crop     , one_spark)
+  
+  short_crop <- terra::crop(short_def , one_spark)
+  short_crop <- terra::crop(short_crop, one_spark)
+  
+  #----- I want to only substitute eco-level deficit where there isn't short ---#
+  long_crop <- terra::mask(long_crop, short_crop, inverse = T)
+  all_def <- terra::subst(long_crop, NA, 0) + terra::subst(short_crop, NA, 0)
+  rm(short_crop, long_crop)
+  invisible(gc())
+  #----- Mask back to FRI, no values if FRI was NA -----------------------------#
+  all_def <- terra::mask(all_def, fri_crop)
+  all_def <- terra::mask(all_def, forest_type)
+  
+  #-----------------------------------------------------------------------------#
+  # Entertain the reader with maps of forest type and deficit
+  #-----------------------------------------------------------------------------#
+  suppressMessages(forest_types_plot <- ggplot() + 
+                     geom_spatraster(data = forest_type) +
+                     geom_spatvector(data = one_spark, fill=NA) +
+                     theme_bw() +
+                     blank_axes +
+                     #theme(legend.position = "bottom") +
+                     guides(fill = guide_legend(nrow = 3)) +
+                     ggtitle("Forest types") +
+                     forest_type_scale)
+  
+  suppressMessages(fire_def_plot <- ggplot() + 
+                     geom_spatraster(data = all_def) +
+                     geom_spatvector(data = one_spark, fill=NA) +
+                     theme_bw() +
+                     blank_axes +
+                     #theme(legend.position = "bottom") +
+                     ggtitle("Forests fire deficit/surplus") +
+                     deficit_scale)
+  
+  #-----------------------------------------------------------------------------#
+  # Extract table stats
+  #-----------------------------------------------------------------------------#
+  
+  #----- Overall area ----------------------------------------------------------#
+  vv <- values(forest_type)
+  tab <- table(vv)
+  
+  summary_dat <- data.frame(Forest = levels(forest_type)[[1]]$category,
+                            Numcells = as.numeric(unlist(tab)))
+  rm(vv, tab)
+  invisible(gc())
+  
+  #----- Area in surplus and deficit -------------------------------------------#
+  surplus <- terra::ifel(all_def > 0, 1, 0)
+  datum <- terra::zonal(surplus, forest_type, fun="sum")
+  if (identical(as.character(datum$category), summary_dat$Forest)) {
+    summary_dat$Numsurpluscells <- datum$forest_def
+  } else {
+    stop("heeeeeelp")
+  }
+  rm(surplus)
+  invisible(gc())
+  
+  deficit <- terra::ifel(all_def < 0, 1, 0)
+  datum <- terra::zonal(deficit, forest_type, fun="sum")
+  if (identical(as.character(datum$category), summary_dat$Forest)) {
+    summary_dat$Numdeficitcells <- datum$forest_def
+  } else {
+    stop("heeeeeelp")
+  }
+  rm(deficit)
+  invisible(gc())
+  
+  #----- Mean and sd of deficit ------------------------------------------------#
+  datum <- terra::zonal(all_def, forest_type, fun="mean")
+  if (identical(as.character(datum$category), summary_dat$Forest)) {
+    summary_dat$mean_deficit <- datum$forest_def
+  } else {
+    stop("heeeeeelp")
+  }
+  
+  datum <- terra::zonal(all_def, forest_type, fun="sd")
+  if (identical(as.character(datum$category), summary_dat$Forest)) {
+    summary_dat$sd_deficit <- datum$forest_def
+  } else {
+    stop("heeeeeelp")
+  }
+  
+  #----- Clean up and get ready to display -------------------------------------#
+  summary_dat$Total_area <- 
+    ((summary_dat$Numcells * prod(res(forest_type)))/10000) * ha_to_acres
+  
+  summary_dat$Surplus_area <- 
+    ((summary_dat$Numsurpluscells * prod(res(forest_type)))/10000) * ha_to_acres
+  
+  summary_dat$Deficit_area <- 
+    ((summary_dat$Numdeficitcells * prod(res(forest_type)))/10000) * ha_to_acres
+  
+  summary_dat$Numcells <- NULL
+  summary_dat$Numdeficitcells <- NULL
+  summary_dat$Numsurpluscells <- NULL
+  
+  rm(forest_type)
+  invisible(gc())
+  
+  
+  
+  
+  #-----------------------------------------------------------------------------#
+  # Grass
+  #-----------------------------------------------------------------------------#
+  grass_mask <- terra::ifel(veg_crop == "Grass", 1, NA)
+  #grass_fri  <- terra::mask(fri_crop, grass_mask)
+  
+  #----- Make a total fire deficit map, including long deficit -----------------#
+  long_crop <- terra::crop(long_grass_def, one_spark)
+  long_crop <- terra::mask(long_crop     , one_spark)
+  
+  short_crop <- terra::crop(short_def , one_spark)
+  short_crop <- terra::crop(short_crop, one_spark)
+  
+  #----- I want to only substitute eco-level deficit where there isn't short ---#
+  long_crop <- terra::mask(long_crop, short_crop, inverse = T)
+  all_def <- terra::subst(long_crop, NA, 0) + terra::subst(short_crop, NA, 0)
+  rm(short_crop, long_crop)
+  invisible(gc())
+  #----- Mask back to FRI, no values if FRI was NA -----------------------------#
+  all_def <- terra::mask(all_def, fri_crop)
+  all_def <- terra::mask(all_def, grass_mask)
+  #-----------------------------------------------------------------------------#
+  
+  
+  
+  #----- Prep a map of grass deficit -------------------------------------------#
+  suppressMessages(grassplot <- ggplot() + 
+                     geom_spatraster(data = all_def) +
+                     geom_spatvector(data = one_spark, fill=NA) +
+                     theme_bw() +
+                     blank_axes +
+                     #theme(legend.position = "bottom") +
+                     ggtitle("Grass deficit/surplus") +
+                     deficit_scale)
+  #-----------------------------------------------------------------------------#
+  
+  
+  #----- Extract table stats ---------------------------------------------------#
+  
+  # Overall area
+  vv <- values(grass_mask)
+  grass_cells <- sum(vv, na.rm=T)
+  
+  rm(vv)
+  invisible(gc())
+  
+  #----- Area in surplus and deficit -------------------------------------------#
+  surplus <- terra::ifel(all_def > 0, 1, 0)
+  vv <- values(surplus)
+  surplus_cells <- sum(vv, na.rm=T)
+  rm(surplus, vv)
+  
+  deficit <- terra::ifel(all_def < 0, 1, 0)
+  vv <- values(deficit)
+  deficit_cells <- sum(vv, na.rm=T)
+  rm(deficit, vv)
+  invisible(gc())
+  
+  #----- Mean and sd of deficit ------------------------------------------------#
+  vv <- values(all_def)
+  mean_deficit <- mean(vv, na.rm=T)
+  sd_deficit   <- sd  (vv, na.rm=T)
+  
+  summary_dat <- rbind(summary_dat, data.frame(
+    Forest = "Grassland",
+    Total_area = ((grass_cells * prod(res(grass_mask)))/10000) * ha_to_acres,
+    Surplus_area = ((surplus_cells * prod(res(grass_mask)))/10000) * ha_to_acres,
+    Deficit_area = ((deficit_cells * prod(res(grass_mask)))/10000) * ha_to_acres,
+    mean_deficit = mean_deficit,
+    sd_deficit = sd_deficit
+  ))
+  rm(grass_mask, vv, all_def)
+  invisible(gc())
+  #-----------------------------------------------------------------------------#
+  
+  
+  
+  #-----------------------------------------------------------------------------#
+  # Shrub
+  #-----------------------------------------------------------------------------#
+  shrub_mask <- terra::ifel(veg_crop == "Shrub", 1, NA)
+  
+  #----- Make a total fire deficit map, including long deficit -----------------#
+  long_crop <- terra::crop(long_shrub_def, one_spark)
+  long_crop <- terra::mask(long_crop     , one_spark)
+  
+  short_crop <- terra::crop(short_def , one_spark)
+  short_crop <- terra::crop(short_crop, one_spark)
+  
+  #----- I want to only substitute eco-level deficit where there isn't short ---#
+  long_crop <- terra::mask(long_crop, short_crop, inverse = T)
+  all_def <- terra::subst(long_crop, NA, 0) + terra::subst(short_crop, NA, 0)
+  rm(short_crop, long_crop)
+  invisible(gc())
+  #----- Mask back to FRI, no values if FRI was NA -----------------------------#
+  all_def <- terra::mask(all_def, fri_crop)
+  all_def <- terra::mask(all_def, shrub_mask)
+  #-----------------------------------------------------------------------------#
+  
+  
+  
+  #----- Prep a map of shrub deficit -------------------------------------------#
+  suppressMessages(shrubplot <- ggplot() + 
+                     geom_spatraster(data = all_def) +
+                     geom_spatvector(data = one_spark, fill=NA) +
+                     theme_bw() +
+                     blank_axes +
+                     #theme(legend.position = "bottom") +
+                     ggtitle("Shrub deficit/surplus") +
+                     deficit_scale)
+  #-----------------------------------------------------------------------------#
+  
+  
+  #----- Extract table stats ---------------------------------------------------#
+  
+  # Overall area
+  vv <- values(shrub_mask)
+  shrub_cells <- sum(vv, na.rm=T)
+  
+  rm(vv)
+  invisible(gc())
+  
+  #----- Area in surplus and deficit -------------------------------------------#
+  surplus <- terra::ifel(all_def > 0, 1, 0)
+  vv <- values(surplus)
+  surplus_cells <- sum(vv, na.rm=T)
+  rm(surplus, vv)
+  
+  deficit <- terra::ifel(all_def < 0, 1, 0)
+  vv <- values(deficit)
+  deficit_cells <- sum(vv, na.rm=T)
+  rm(deficit, vv)
+  invisible(gc())
+  
+  #----- Mean and sd of deficit ------------------------------------------------#
+  vv <- values(all_def)
+  mean_deficit <- mean(vv, na.rm=T)
+  sd_deficit   <- sd  (vv, na.rm=T)
+  
+  summary_dat <- rbind(summary_dat, data.frame(
+    Forest = "Shrubland",
+    Total_area = ((shrub_cells * prod(res(shrub_mask)))/10000) * ha_to_acres,
+    Surplus_area = ((surplus_cells * prod(res(shrub_mask)))/10000) * ha_to_acres,
+    Deficit_area = ((deficit_cells * prod(res(shrub_mask)))/10000) * ha_to_acres,
+    mean_deficit = mean_deficit,
+    sd_deficit = sd_deficit
+  ))
+  rm(shrub_mask, vv, all_def)
+  invisible(gc())
+  #-----------------------------------------------------------------------------#
+  
+  
+  #-----------------------------------------------------------------------------#
+  # Plots
+  #-----------------------------------------------------------------------------#
+  #fri_plot + veg_map_plot + 
+  #  forest_types_plot + fire_def_plot +
+  #  grassplot + shrubplot +# patchwork::plot_layout(nrow = 3) +
+  #  patchwork::plot_annotation(title = "AZ-Coconino County")
+  
+  fri_plot + veg_map_plot
+  forest_types_plot + fire_def_plot 
+  grassplot + shrubplot 
+  
+  
+  #----- Prep and display table ------------------------------------------------#
+  
+  summary_dat$meansd <- paste(round(summary_dat$mean_deficit, 2), "$\\pm$", 
+                              round(summary_dat$sd_deficit, 2))
+  summary_dat$mean_deficit <- NULL
+  summary_dat$sd_deficit <- NULL
+  
+  summary_dat$Total_area <- prettyNum(round(summary_dat$Total_area, 0), 
+                                      big.mark = ",")
+  
+  summary_dat$Surplus_area <- prettyNum(round(summary_dat$Surplus_area, 0), 
+                                        big.mark = ",")
+  
+  summary_dat$Deficit_area <- prettyNum(round(summary_dat$Deficit_area, 0), 
+                                        big.mark = ",")
+  
+  knitr::kable(summary_dat, col.names = c("Vegetation type", "Total area (ac)",
+                                          "Area in surplus", "Area in deficit",
+                                          "Mean deficit"), digits = 1)
+}
+
+```
+
 
 
 
@@ -39,29 +451,29 @@ Fire return interval data is from [Landfire](https://landfire.gov/fire-regime/fr
 #| eval: FALSE
 
 #----- Load the BPS raster ---------------------------------------------------#
-fri <- rast("Z:/project_data/landfire data/LF2016_FRI_200_CONUS/Tif/LC16_FRI_200.tif")
+fri <- terra::rast("Z:/project_data/landfire data/LF2016_FRI_200_CONUS/Tif/LC16_FRI_200.tif")
 fri_crs <- crs(fri)
 
 #-----------------------------------------------------------------------------#
 # A long and painful journey to prepare the study domain raster so that I can
 # successfully crop and mask to it. 
 #-----------------------------------------------------------------------------#
-study_domain <- rast("Z:/project_data/western_fire/for_Lora/study_domain.tif")
+study_domain <- terra::rast("Z:/project_data/western_fire/for_Lora/study_domain.tif")
 
-#----- Project to the FRI raster. This will mess up the study domain extent --#
+#----- terra::project to the FRI raster. This will mess up the study domain extent --#
 # But if I don't do this...can't mask later, cells won't match.
-study_domain <- project(study_domain, fri)
+study_domain <- terra::project(study_domain, fri)
 
 #----- Now shrink the study domain back down to reasonable size
 # Set 0s to NA
-study_domain <- classify(study_domain, cbind(0, NA))
+study_domain <- terra::classify(study_domain, cbind(0, NA))
 # Trim off surrounding NA to re-set the extent
 study_domain <- trim(study_domain)
 writeRaster(study_domain, "../temp_rasters/study_domain.tif")
 
 #----- Crop and mask to study domain -----------------------------------------#
-fri_crop <- crop(fri, study_domain)
-fri_crop <- mask(fri_crop, study_domain)
+fri_crop <- terra::crop(fri, study_domain)
+fri_crop <- terra::mask(fri_crop, study_domain)
 
 rm(fri, study_domain)
 gc()
@@ -74,7 +486,7 @@ gc()
 
 ```{r make-all-fri-rast}
 #| eval: false
-fri <- rast("../temp_rasters/fri_crop.tif")
+fri <- terra::rast("../temp_rasters/fri_crop.tif")
 
 #----- Get the CSV data that has fire return interval for all BPS codes ------#
 bps <- read.csv("Z:/project_data/landfire data/LF2016_FRI_200_CONUS/CSV_Data/LF16_FRI_200.csv")
@@ -88,18 +500,18 @@ good_bps <- which(bps$FRI_ALLFIR > 0)
 mat <- matrix(c(bps$Value[good_bps], bps$FRI_ALLFIR[good_bps]), 
               nrow=length(good_bps), ncol=2)
 
-tile <- classify(fri, mat, others=NA)
+tile <- terra::classify(fri, mat, others=NA)
 writeRaster(tile, "../temp_rasters/all_fri_vals.tif", overwrite = TRUE)
 ```
 
 ```{r}
-fri <- rast("../temp_rasters/all_fri_vals.tif")
+fri <- terra::rast("../temp_rasters/all_fri_vals.tif")
 # This used to use the tigris package, but one day the data wasn't available on
 # line and the code broke. So I downloaded a shapefile instead
 #states <- states(cb=TRUE)
-states <- vect("../Data/s_05mr24.shp")
-states <- project(states, fri)
-states <- crop(states, fri)
+states <- terra::vect("../Data/s_05mr24.shp")
+states <- terra::project(states, fri)
+states <- terra::crop(states, fri)
 plot(fri, axes=F, 
      range=c(0,500),
      fill_range=T,
@@ -149,7 +561,7 @@ mat <- matrix(c(bps$Value[good_bps], bps$FRI_ALLFIR[good_bps]),
 if (!dir.exists("../tempproc")) dir.create("../tempproc")
 
 #----- Divide the raster into tiles for processing ---------------------------#
-fri_crop <- rast("../temp_rasters/fri_crop.tif")
+fri_crop <- terra::rast("../temp_rasters/fri_crop.tif")
 tile_size <- c(10000, 10000)  # Size of each tile (rows, columns)
 tiles <- makeTiles(fri_crop, tile_size, filename = "tempproc/tile.tif", 
                    overwrite = TRUE)
@@ -161,8 +573,8 @@ gc()
 #tiles <- list.files("tempproc")
 #tiles <- paste0("tempproc/", tiles[-grep("aux", tiles)])
 processed_tiles <- lapply(tiles, function(tile_path) {
-  tile <- rast(tile_path)
-  tile <- classify(tile, mat, others=NA)
+  tile <- terra::rast(tile_path)
+  tile <- terra::classify(tile, mat, others=NA)
   output_path <- gsub("\\.tif$", "_processed.tif", tile_path)
   writeRaster(tile, output_path, overwrite = TRUE)
   return(output_path)
@@ -173,7 +585,7 @@ gc()
 #----- Mosaic the processed tiles back together ------------------------------#
 processed_tiles <- paste0("../tempproc/",
                           list.files("../tempproc", pattern="processed"))
-processed_rasters <- lapply(processed_tiles, rast)
+processed_rasters <- lapply(processed_tiles, terra::rast)
 mosaic <- do.call(terra::mosaic, processed_rasters)
 
 writeRaster(mosaic, "../west_us_FRI.tif", overwrite = TRUE)
@@ -190,21 +602,21 @@ ak_bps <- read.csv("Z:/project_data/landfire data/LF2023_FRI_240_AK/CSV_Data/LF2
 #bps <- bps[bps$FRI_ALLFIR <= 40 & bps$FRI_ALLFIR > 0,]
 bad_bps <- which(ak_bps$FRI_ALLFIR > 40 | ak_bps$FRI_ALLFIR < 0)
 
-akfri <- rast("Z:/project_data/landfire data/LF2023_FRI_240_AK/Tif/LA23_FRI_240.tif")
+akfri <- terra::rast("Z:/project_data/landfire data/LF2023_FRI_240_AK/Tif/LA23_FRI_240.tif")
 ```
 
 ```{r}
 #| results: false
 #| message: false
 
-fri <- rast("../west_us_FRI.tif")
+fri <- terra::rast("../west_us_FRI.tif")
 
 # This used to use the tigris package, but one day the data wasn't available on
 # line and the code broke. So I downloaded a shapefile instead
 #states <- states(cb=TRUE)
-states <- vect("../Data/s_05mr24.shp")
-states <- project(states, fri)
-states <- crop(states, fri)
+states <- terra::vect("../Data/s_05mr24.shp")
+states <- terra::project(states, fri)
+states <- terra::crop(states, fri)
 plot(fri, axes=F,
      main="Fire return interval where values <= 40 years")
 plot(states, add=T, fill=NULL)
@@ -227,34 +639,34 @@ $$ def = \frac{N_{fire}}{40/FRI} $$ where $N_{fire}$ is the number of times each
 #-----------------------------------------------------------------------------#
 
 #----- Fire perimeters from Mahsa --------------------------------------------#
-fire_perimeters <- vect("Z:/Mahsa_GF_data/goodfire_data_jan25/goodfire_1985to2024_f1jan25.shp")
+fire_perimeters <- terra::vect("Z:/Mahsa_GF_data/goodfire_data_jan25/goodfire_1985to2024_f1jan25.shp")
 
 #----- Fire return interval --------------------------------------------------#
-fri <- rast("../west_us_FRI.tif")
+fri <- terra::rast("../west_us_FRI.tif")
 
 fire_perimeters <- terra::project(fire_perimeters, fri)
 
 #----- Create an output raster -----------------------------------------------#
-num_burns <- rast(fri)
+num_burns <- terra::rast(fri)
 
-# Rasterize using function to count overlapping polygons
+# rasterize using function to count overlapping polygons
 r_count <- rasterize(fire_perimeters, num_burns, fun="count", background = 0)
 writeRaster(r_count, "../temp_rasters/num_fires.tif")
 ```
 
 ```{r create-fire-deficit-raster}
 #| eval: false
-nfire <- rast("../temp_rasters/num_fires.tif")
-fri <- rast("../west_us_FRI.tif")
+nfire <- terra::rast("../temp_rasters/num_fires.tif")
+fri <- terra::rast("../west_us_FRI.tif")
 
 def <- (nfire / (40/fri))-1
 writeRaster(def, "../western_us_fire_deficit.tif", overwrite=T)
 ```
 
 ```{r}
-def <- rast("../western_us_fire_deficit.tif")
+def <- terra::rast("../western_us_fire_deficit.tif")
 
-# This doesn't work - error: long vectors not supported yet
+# This doesn't work - error: long terra::vectors not supported yet
 #library(tidyterra)
 #ggplot(def) + 
 #  geom_spatraster(aes(fill=value)) +
@@ -297,12 +709,12 @@ We originally used a definition of forest that was the intersection between Land
 #| eval: FALSE
 
 #----- Load the BPS raster ---------------------------------------------------#
-evc <- rast("Z:/project_data/landfire data/LF2016_EVC_200_CONUS/Tif/LC16_EVC_200.tif")
-study_domain <- rast("../temp_rasters/study_domain.tif")
+evc <- terra::rast("Z:/project_data/landfire data/LF2016_EVC_200_CONUS/Tif/LC16_EVC_200.tif")
+study_domain <- terra::rast("../temp_rasters/study_domain.tif")
 
 #----- Crop and mask study domain --------------------------------------------#
-evc_crop <- crop(evc, study_domain)
-evc_crop <- mask(evc_crop, study_domain)
+evc_crop <- terra::crop(evc, study_domain)
+evc_crop <- terra::mask(evc_crop, study_domain)
 
 rm(evc)
 gc()
@@ -338,15 +750,15 @@ good_codes <- c(good_codes, grep("Tree Cover >= 99.*", evc_codes$CLASSNAMES))
 mat <- matrix(c(evc_codes$VALUE[good_codes], rep(1, length(good_codes))), 
               nrow=length(good_codes), ncol=2)
 
-evc_crop <- rast("../temp_rasters/evc_crop.tif")
-evc <- classify(evc_crop, mat, others=NA)
+evc_crop <- terra::rast("../temp_rasters/evc_crop.tif")
+evc <- terra::classify(evc_crop, mat, others=NA)
 rm(evc_crop)
 gc()
 writeRaster(evc, "../western_us_forest.tif", overwrite = TRUE)
 ```
 
 ```{r}
-forest <- rast("../western_us_forest.tif")
+forest <- terra::rast("../western_us_forest.tif")
 plot(forest, axes=F, main="Western US forest cover", col="darkgreen", legend = F)
 plot(states, add=T, fill=NULL)
 rm(forest)
@@ -357,7 +769,7 @@ invisible(gc())
 
 Our identified forest regions can be subdivided by fire regime as follows:
 
-**Output:** Raster called "western_us_frg_forest.tif" with the following values:
+**Output:** raster called "western_us_frg_forest.tif" with the following values:
 
 -   1: dry frequent fire forest (FRG groups I-A, I-B, and I-C))
 -   2: mixed severity fire forest (FRG groups IIIA and IIIB)
@@ -370,12 +782,12 @@ Our identified forest regions can be subdivided by fire regime as follows:
 #| eval: FALSE
 
 #----- Load the BPS raster ---------------------------------------------------#
-frg <- rast("Z:/project_data/landfire data/LF2016_FRG_200_CONUS/Tif/LC16_FRG_200.tif")
-study_domain <- rast("../temp_rasters/study_domain.tif")
+frg <- terra::rast("Z:/project_data/landfire data/LF2016_FRG_200_CONUS/Tif/LC16_FRG_200.tif")
+study_domain <- terra::rast("../temp_rasters/study_domain.tif")
 
 #----- Crop and mask to study domain -----------------------------------------#
-frg_crop <- crop(frg, study_domain)
-frg_crop <- mask(frg_crop, study_domain)
+frg_crop <- terra::crop(frg, study_domain)
+frg_crop <- terra::mask(frg_crop, study_domain)
 
 rm(frg, study_domain)
 gc()
@@ -401,7 +813,7 @@ gc()
 bps <- read.csv("Z:/project_data/landfire data/LF2016_FRG_200_CONUS/CSV_Data/LF16_FRG_200.csv")
 
 frg_groups <- data.frame(frg = c("I-A", "I-B", "I-C", "III-A", "III-B",
-                                     "IV-A", "IV-B", "V-A", "V-B"),
+                                 "IV-A", "IV-B", "V-A", "V-B"),
                          grp = c(1,1,1,2,2,3,3,4,4))
 
 #----- Filter out to units in one of our groupings ---------------------------#
@@ -412,8 +824,8 @@ bps$grp <- frg_groups$grp[match(bps$FRG_NEW, frg_groups$frg)]
 #----- Replace BPS code with my FRG code, making NAs for all others ----------#
 mat <- matrix(c(bps$Value, bps$grp), nrow=nrow(bps), ncol=2)
 
-frg_crop <- rast("../temp_rasters/frg_crop.tif")
-frg <- classify(frg_crop, mat, others=NA)
+frg_crop <- terra::rast("../temp_rasters/frg_crop.tif")
+frg <- terra::classify(frg_crop, mat, others=NA)
 writeRaster(frg, "../temp_rasters/frg.tif", overwrite=T)
 ```
 
@@ -421,20 +833,20 @@ writeRaster(frg, "../temp_rasters/frg.tif", overwrite=T)
 #| eval: false
 
 #----- Load my FRG groups, and the forest raster -----------------------------#
-frg <- rast("../temp_rasters/frg.tif")
-forest <- rast("../western_us_forest.tif")
+frg <- terra::rast("../temp_rasters/frg.tif")
+forest <- terra::rast("../western_us_forest.tif")
 
 #----- Dry frequent fire forest - group 1 ------------------------------------#
 dff <- sum(frg, forest)
 dff <- dff - 1
 levels(dff) <- data.frame(ID = 1:4, 
-                  category = c("Dry frequent fire", "Mixed severity fire", 
-                 "Stand replacing group IV", "Stand replacing group V"))
+                          category = c("Dry frequent fire", "Mixed severity fire", 
+                                       "Stand replacing group IV", "Stand replacing group V"))
 writeRaster(dff, "../western_us_frg_forest.tif", overwrite=T)
 ```
 
 ```{r}
-dff <- rast("../western_us_frg_forest.tif")
+dff <- terra::rast("../western_us_frg_forest.tif")
 
 plot(dff, main="Forest area categorized by fire regime",
      axes=F)
@@ -450,15 +862,15 @@ invisible(gc())
 ```{r create-forest-deficit-rast}
 #| eval: false
 
-defi <- rast("../western_us_fire_deficit.tif")
-fors <- rast("../western_us_forest.tif")
+defi <- terra::rast("../western_us_fire_deficit.tif")
+fors <- terra::rast("../western_us_forest.tif")
 
-fordef <- mask(defi, fors)
+fordef <- terra::mask(defi, fors)
 writeRaster(fordef, "../forest_deficit.tif", overwrite=T)
 ```
 
 ```{r}
-fordef <- rast("../forest_deficit.tif")
+fordef <- terra::rast("../forest_deficit.tif")
 plot(fordef, axes=F,
      range=c(-1,1),
      fill_range=T,
@@ -512,15 +924,15 @@ good_codes <- c(good_codes, grep("Herb Cover >.*", evc_codes$CLASSNAMES))
 mat <- matrix(c(evc_codes$VALUE[good_codes], rep(1, length(good_codes))), 
               nrow=length(good_codes), ncol=2)
 
-evc_crop <- rast("../temp_rasters/evc_crop.tif")
-evc <- classify(evc_crop, mat, others=NA)
+evc_crop <- terra::rast("../temp_rasters/evc_crop.tif")
+evc <- terra::classify(evc_crop, mat, others=NA)
 rm(evc_crop)
 gc()
 writeRaster(evc, "../western_us_grass.tif", overwrite = TRUE)
 ```
 
 ```{r}
-grass <- rast("../western_us_grass.tif")
+grass <- terra::rast("../western_us_grass.tif")
 plot(grass, axes=F, main="Western US grass cover", col="darkgoldenrod3", legend = F)
 plot(states, add=T, fill=NULL)
 rm(grass)
@@ -531,7 +943,7 @@ invisible(gc())
 
 Our identified forest regions can be subdivided by fire regime as follows:
 
-**Output:** Raster called "western_us_frg_grass.tif" with the following values:
+**Output:** raster called "western_us_frg_grass.tif" with the following values:
 
 -   1: dry frequent fire (FRG groups I-A, I-B, and I-C))
 -   2: mixed severity fire (FRG groups IIIA and IIIB)
@@ -544,20 +956,20 @@ Our identified forest regions can be subdivided by fire regime as follows:
 #| eval: false
 
 #----- Load my FRG groups, and the grass raster ------------------------------#
-frg <- rast("../temp_rasters/frg.tif")
-grass <- rast("../western_us_grass.tif")
+frg <- terra::rast("../temp_rasters/frg.tif")
+grass <- terra::rast("../western_us_grass.tif")
 
 #----- Dry frequent fire - group 1 -------------------------------------------#
 dff <- sum(frg, grass)
 dff <- dff - 1
 levels(dff) <- data.frame(ID = 1:4, 
-                  category = c("Dry frequent fire", "Mixed severity fire", 
-                 "Stand replacing group IV", "Stand replacing group V"))
+                          category = c("Dry frequent fire", "Mixed severity fire", 
+                                       "Stand replacing group IV", "Stand replacing group V"))
 writeRaster(dff, "../western_us_frg_grass.tif", overwrite=T)
 ```
 
 ```{r}
-dff <- rast("../western_us_frg_grass.tif")
+dff <- terra::rast("../western_us_frg_grass.tif")
 
 plot(dff, main="Grassland area categorized by fire regime",
      axes=F)
@@ -573,15 +985,15 @@ invisible(gc())
 ```{r create-grass-deficit-rast}
 #| eval: false
 
-defi <- rast("../western_us_fire_deficit.tif")
-fors <- rast("../western_us_grass.tif")
+defi <- terra::rast("../western_us_fire_deficit.tif")
+fors <- terra::rast("../western_us_grass.tif")
 
-fordef <- mask(defi, fors)
+fordef <- terra::mask(defi, fors)
 writeRaster(fordef, "../grass_deficit.tif", overwrite=T)
 ```
 
 ```{r}
-fordef <- rast("../grass_deficit.tif")
+fordef <- terra::rast("../grass_deficit.tif")
 plot(fordef, axes=F,
      range=c(-1,1),
      fill_range=T,
@@ -626,15 +1038,15 @@ good_codes <- c(good_codes, grep("Shrub Cover >.*", evc_codes$CLASSNAMES))
 mat <- matrix(c(evc_codes$VALUE[good_codes], rep(1, length(good_codes))), 
               nrow=length(good_codes), ncol=2)
 
-evc_crop <- rast("../temp_rasters/evc_crop.tif")
-evc <- classify(evc_crop, mat, others=NA)
+evc_crop <- terra::rast("../temp_rasters/evc_crop.tif")
+evc <- terra::classify(evc_crop, mat, others=NA)
 rm(evc_crop)
 gc()
 writeRaster(evc, "../western_us_shrub.tif", overwrite = TRUE)
 ```
 
 ```{r}
-shrub <- rast("../western_us_shrub.tif")
+shrub <- terra::rast("../western_us_shrub.tif")
 plot(shrub, axes=F, main="Western US shrub cover", col="burlywood4", legend = F)
 plot(states, add=T, fill=NULL)
 rm(shrub)
@@ -645,7 +1057,7 @@ invisible(gc())
 
 Our identified forest regions can be subdivided by fire regime as follows:
 
-**Output:** Raster called "western_us_frg_shrub.tif" with the following values:
+**Output:** raster called "western_us_frg_shrub.tif" with the following values:
 
 -   1: dry frequent fire (FRG groups I-A, I-B, and I-C))
 -   2: mixed severity fire (FRG groups IIIA and IIIB)
@@ -658,20 +1070,20 @@ Our identified forest regions can be subdivided by fire regime as follows:
 #| eval: false
 
 #----- Load my FRG groups, and the shrub raster ------------------------------#
-frg <- rast("../temp_rasters/frg.tif")
-shrub <- rast("../western_us_shrub.tif")
+frg <- terra::rast("../temp_rasters/frg.tif")
+shrub <- terra::rast("../western_us_shrub.tif")
 
 #----- Dry frequent fire - group 1 -------------------------------------------#
 dff <- sum(frg, shrub)
 dff <- dff - 1
 levels(dff) <- data.frame(ID = 1:4, 
-                  category = c("Dry frequent fire", "Mixed severity fire", 
-                 "Stand replacing group IV", "Stand replacing group V"))
+                          category = c("Dry frequent fire", "Mixed severity fire", 
+                                       "Stand replacing group IV", "Stand replacing group V"))
 writeRaster(dff, "../western_us_frg_shrub.tif", overwrite=T)
 ```
 
 ```{r}
-dff <- rast("../western_us_frg_shrub.tif")
+dff <- terra::rast("../western_us_frg_shrub.tif")
 
 plot(dff, main="Shrub area categorized by fire regime",
      axes=F)
@@ -687,15 +1099,15 @@ invisible(gc())
 ```{r create-shrub-deficit-rast}
 #| eval: false
 
-defi <- rast("../western_us_fire_deficit.tif")
-fors <- rast("../western_us_shrub.tif")
+defi <- terra::rast("../western_us_fire_deficit.tif")
+fors <- terra::rast("../western_us_shrub.tif")
 
-fordef <- mask(defi, fors)
+fordef <- terra::mask(defi, fors)
 writeRaster(fordef, "../shrub_deficit.tif", overwrite=T)
 ```
 
 ```{r}
-fordef <- rast("../shrub_deficit.tif")
+fordef <- terra::rast("../shrub_deficit.tif")
 plot(fordef, axes=F,
      range=c(-1,1),
      fill_range=T,
@@ -707,19 +1119,28 @@ invisible(gc())
 ```
 
 ```{r make-all-veg-rast}
+#| eval: false
+
 #----- For later analysis - make a raster combining all of our vegetation types
 
-forest <- rast("../western_us_forest.tif")
-grass  <- rast("../western_us_grass.tif")
-shrub  <- rast("../western_us_shrub.tif")
+forest <- terra::rast("../western_us_forest.tif")
+grass  <- terra::rast("../western_us_grass.tif")
+shrub  <- terra::rast("../western_us_shrub.tif")
 
 #----- NAs become 0, so we can add -------------------------------------------#
 forest <- subst(forest, NA, 0)
 grass  <- subst(grass , NA, 0)
 shrub  <- subst(shrub , NA, 0)
 
+#----- Make into a categorical raster situation ------------------------------#
+grass <- subst(grass, 1, 2)
+shrub <- subst(shrub, 1, 3)
+
 all_veg <- forest + grass + shrub
 all_veg <- subst(all_veg, 0, NA)
+
+cats <- data.frame(id = 1:3, veg = c("Forest", "Grass", "Shrub"))
+levels(all_veg) <- cats
 
 writeRaster(all_veg, "../temp_rasters/combined_veg_area.tif", overwrite=T)
 ```
@@ -757,21 +1178,21 @@ good_bps <- which(bps$FRI_ALLFIR > 40)
 mat <- matrix(c(bps$Value[good_bps], bps$FRI_ALLFIR[good_bps]), 
               nrow=length(good_bps), ncol=2)
 
-fri_crop <- rast("../temp_rasters/fri_crop.tif")
-fri <- classify(fri_crop, mat, others=NA)
+fri_crop <- terra::rast("../temp_rasters/fri_crop.tif")
+fri <- terra::classify(fri_crop, mat, others=NA)
 writeRaster(fri, "../west_us_long_FRI.tif")
 ```
 
 ```{r}
-eco <- vect("../Data/level_3_ecoregion/eco_region.shp")
-fri <- rast("../west_us_long_FRI.tif")
-eco <- project(eco, fri)
+eco <- terra::vect("../Data/level_3_ecoregion/eco_region.shp")
+fri <- terra::rast("../west_us_long_FRI.tif")
+eco <- terra::project(eco, fri)
 
 #----- Crop level 3 ecoregions to study domain -------------------------------#
-eco <- crop(eco, fri)
+eco <- terra::crop(eco, fri)
 
 #----- And to states ---------------------------------------------------------#
-eco <- crop(eco, states)
+eco <- terra::crop(eco, states)
 
 plot(fri, axes=F, 
      main="Study areas with FRI > 40 years, with ecoregions")
@@ -790,47 +1211,51 @@ plot(eco, add=T, border="red")
 # ecoregion areas.
 #-----------------------------------------------------------------------------#
 
-eco <- vect("../Data/level_3_ecoregion/eco_region.shp")
-states <- vect("../Data/s_05mr24.shp")
+eco <- terra::vect("../Data/level_3_ecoregion/eco_region.shp")
+states <- terra::vect("../Data/s_05mr24.shp")
 
-fri <- rast("../west_us_long_FRI.tif")
-num_fires <- rast("../temp_rasters/num_fires.tif")
+fri <- terra::rast("../west_us_long_FRI.tif")
+num_fires <- terra::rast("../temp_rasters/num_fires.tif")
 
-eco <- project(eco, fri)
-states <- project(states, fri)
-states <- crop(states, fri)
+eco <- terra::project(eco, fri)
+states <- terra::project(states, fri)
+states <- terra::crop(states, fri)
 
 #----- Crop level 3 ecoregions to study domain -------------------------------#
-eco <- crop(eco, fri)
+eco <- terra::crop(eco, fri)
 
 #----- And to states ---------------------------------------------------------#
-eco <- crop(eco, states)
+eco <- terra::crop(eco, states)
 
 #-----------------------------------------------------------------------------#
 # All veg area - for forests, grasslands, and shrublands combined (ignoring
 # all else)
 #-----------------------------------------------------------------------------#
-all_veg <- rast("../temp_rasters/combined_veg_area.tif")
+all_veg <- terra::rast("../temp_rasters/combined_veg_area.tif")
+
+# Make all values 1, so I can easily add and subtract
+all_veg <- terra::classify(all_veg, cbind(2:3, c(1,1)), others=NA)
+
 # Create a raster that masks out combined veg area area on long FRIs
 good_veg <- fri + all_veg
 good_veg <- good_veg - 1 # restoring FRI value
 
 #----- Sum of FRI by ecoregion -----------------------------------------------#
-sum_fri <- exact_extract(fri, sf::st_as_sf(eco), fun='sum')
+sum_fri <- exactextractr::exact_extract(fri, sf::st_as_sf(eco), fun='sum')
 
 #----- FRP: total area -------------------------------------------------------#
 # Create a raster that has 1 for areas where FRI > 40, and NA elsewhere
 good_for <- ifel(!is.na(fri), 1, NA)
 
 # Calculate number of cells left in each ecoregion
-vv <- exact_extract(good_for, sf::st_as_sf(eco), fun='sum')
+vv <- exactextractr::exact_extract(good_for, sf::st_as_sf(eco), fun='sum')
 
 #----- How much of this area has burned? -------------------------------------#
 good_fire <- good_for + num_fires # Sum to NA out things not in our area
 good_fire <- good_fire - 1 # Get rid of the extra 1 from good_for
 
 # Calculate sum of burned cells left in each ecoregion
-v2 <- exact_extract(good_fire, sf::st_as_sf(eco), fun='sum')
+v2 <- exactextractr::exact_extract(good_fire, sf::st_as_sf(eco), fun='sum')
 
 forest_dat <- data.frame(Name = eco$NA_L3NAME, 
                          Sum_FRI = sum_fri,
@@ -848,28 +1273,28 @@ gc()
 #-----------------------------------------------------------------------------#
 # Forest
 #-----------------------------------------------------------------------------#
-forest <- rast("../western_us_forest.tif")
+forest <- terra::rast("../western_us_forest.tif")
 
 # Create a raster that masks out forest area on long FRIs
 good_for <- fri + forest
 good_for <- good_for - 1 # restoring FRI value
 
 #----- Sum of FRI by ecoregion -----------------------------------------------#
-sum_fri <- exact_extract(good_for, sf::st_as_sf(eco), fun='sum')
+sum_fri <- exactextractr::exact_extract(good_for, sf::st_as_sf(eco), fun='sum')
 
 # Create a raster that has 1 for areas of forest and FRI > 40, and NA elsewhere
 # We can start by summing; this will set NAs to NAs for both
 good_for <- ifel(!is.na(good_for), 1, NA)
 
 # Calculate number of cells left in each ecoregion
-vv <- exact_extract(good_for, sf::st_as_sf(eco), fun='sum')
+vv <- exactextractr::exact_extract(good_for, sf::st_as_sf(eco), fun='sum')
 
 #----- How much of this area has burned? -------------------------------------#
 good_fire <- good_for + num_fires # Sum to NA out things not in our area
 good_fire <- good_fire - 1 # Get rid of the extra 1 from good_for
 
 # Calculate sum of burned cells left in each ecoregion
-v2 <- exact_extract(good_fire, sf::st_as_sf(eco), fun='sum')
+v2 <- exactextractr::exact_extract(good_fire, sf::st_as_sf(eco), fun='sum')
 
 forest_dat <- data.frame(Name = eco$NA_L3NAME, 
                          Sum_FRI = sum_fri,
@@ -887,27 +1312,27 @@ gc()
 #-----------------------------------------------------------------------------#
 # Grassland
 #-----------------------------------------------------------------------------#
-grass <- rast("../western_us_grass.tif")
+grass <- terra::rast("../western_us_grass.tif")
 
 # Create a raster that masks out grass area on long FRIs
 good_gr <- fri + grass
 good_gr <- good_gr - 1 # restoring FRI value
 
 #----- Sum of FRI by ecoregion -----------------------------------------------#
-sum_fri <- exact_extract(good_gr, sf::st_as_sf(eco), fun='sum')
+sum_fri <- exactextractr::exact_extract(good_gr, sf::st_as_sf(eco), fun='sum')
 
 # Create a raster that has 1 for areas of forest and FRI > 40, and NA elsewhere
 # We can start by summing; this will set NAs to NAs for both
 
 good_gr <- ifel(!is.na(good_gr), 1, NA)
 
-vv <- exact_extract(good_gr, sf::st_as_sf(eco), fun='sum')
+vv <- exactextractr::exact_extract(good_gr, sf::st_as_sf(eco), fun='sum')
 
 good_fire <- good_gr + num_fires # Sum to NA out things not in our area
 good_fire <- good_fire - 1 # Get rid of the extra 1 from good_gr
 
 # Calculate sum of burned cells left in each ecoregion
-v2 <- exact_extract(good_fire, sf::st_as_sf(eco), fun='sum')
+v2 <- exactextractr::exact_extract(good_fire, sf::st_as_sf(eco), fun='sum')
 
 grass_dat <- data.frame(Name = eco$NA_L3NAME, 
                         Total_Area = vv,
@@ -920,20 +1345,20 @@ gc()
 #-----------------------------------------------------------------------------#
 # Shrub
 #-----------------------------------------------------------------------------#
-shrub <- rast("../western_us_shrub.tif")
+shrub <- terra::rast("../western_us_shrub.tif")
 
 # Create a raster that masks out shrub area on long FRIs
 good_shrub <- fri + shrub
 good_shrub <- good_shrub - 1 # restoring FRI value
 
 #----- Sum of FRI by ecoregion -----------------------------------------------#
-sum_fri <- exact_extract(good_shrub, sf::st_as_sf(eco), fun='sum')
+sum_fri <- exactextractr::exact_extract(good_shrub, sf::st_as_sf(eco), fun='sum')
 
 # Create a raster that has 1 for areas of forest and FRI > 40, and NA elsewhere
 # We can start by summing; this will set NAs to NAs for both
 good_shrub <- ifel(!is.na(good_shrub), 1, NA)
 
-vv <- exact_extract(good_shrub, sf::st_as_sf(eco), fun='sum')
+vv <- exactextractr::exact_extract(good_shrub, sf::st_as_sf(eco), fun='sum')
 
 good_fire <- good_shrub + num_fires # Sum to NA out things not in our area
 good_fire <- good_fire - 1 # Get rid of the extra 1 from good_shrub
@@ -950,6 +1375,7 @@ gc()
 
 ```{r calc-area-burned-by-eco-veg}
 #| results: asis
+
 
 hist_time <- 40
 
@@ -984,6 +1410,7 @@ knitr::kable(dat, col.names = c("Level 3 Ecoregion",
                                 "FRP",
                                 "Mean FRI",
                                 "Deficit/Surplus"), digits=1)
+
 
 #----- Forest ----------------------------------------------------------------#
 cat("## Forest area stats\n\n")
@@ -1065,6 +1492,135 @@ knitr::kable(dat, col.names = c("Level 3 Ecoregion",
                                 "FRP",
                                 "Mean FRI",
                                 "Deficit/Surplus"), digits=1)
+```
+
+```{r make-long-fri-ecoregions-shapefile}
+#| eval: false
+#-----------------------------------------------------------------------------#
+# Prep ecoregions shapefile; we will add deficit values directly to the 
+# shapefile
+#-----------------------------------------------------------------------------#
+eco <- terra::vect("../Data/level_3_ecoregion/eco_region.shp")
+states <- terra::vect("../Data/s_05mr24.shp")
+
+fri <- terra::rast("../west_us_long_FRI.tif")
+num_fires <- terra::rast("../temp_rasters/num_fires.tif")
+
+eco <- terra::project(eco, fri)
+states <- terra::project(states, fri)
+states <- terra::crop(states, fri)
+
+#----- Crop level 3 ecoregions to study domain -------------------------------#
+eco <- terra::crop(eco, fri)
+
+#----- And to states ---------------------------------------------------------#
+eco <- terra::crop(eco, states)
+
+hist_time <- 40
+
+#-----------------------------------------------------------------------------#
+# Do the FRP calculations by ecoregion. Note that there might be duplicates
+# for an ecoregion, as polygons might have been discontinuous
+#-----------------------------------------------------------------------------#
+
+#----- All veg ---------------------------------------------------------------#
+all_veg_dat <- read.csv("../all_veg_cells_by_ecoregion_long_FRI.csv")
+
+dat <- all_veg_dat %>% group_by(Name) %>% 
+  summarise(Area = sum(Total_Area), 
+            Burned = sum(Area_Burned),
+            FRI_Total = sum(Sum_FRI)) %>%
+  filter(Area > 0) %>%
+  mutate(FRP = if_else(Burned > 0, hist_time/(Burned/Area), NA)) %>%
+  mutate(Mean_FRI = FRI_Total / Area) %>%
+  mutate(Deficit = (FRP / Mean_FRI) - 1) %>%
+  mutate(Area = (Area * prod(res(fri)))/10000,
+         Burned = (Burned * prod(res(fri)))/10000) %>%
+  select(-FRI_Total)
+
+eco$allveg_def <- NA
+ind <- match(eco$NA_L3NAME, dat$Name)
+eco$allveg_def <- dat$Deficit[ind]
+
+#----- Forest ----------------------------------------------------------------#
+forest_dat <- read.csv("../forest_cells_by_ecoregion_long_FRI.csv")
+
+dat <- forest_dat %>% group_by(Name) %>% 
+  summarise(Area = sum(Total_Area), 
+            Burned = sum(Area_Burned),
+            FRI_Total = sum(Sum_FRI)) %>%
+  filter(Area > 0) %>%
+  mutate(FRP = if_else(Burned > 0, hist_time/(Burned/Area), NA)) %>%
+  mutate(Mean_FRI = FRI_Total / Area) %>%
+  mutate(Deficit = (FRP / Mean_FRI) - 1) %>%
+  mutate(Area = (Area * prod(res(fri)))/10000,
+         Burned = (Burned * prod(res(fri)))/10000) %>%
+  select(-FRI_Total)
+
+eco$forest_def <- NA
+ind <- match(eco$NA_L3NAME, dat$Name)
+eco$forest_def <- dat$Deficit[ind]
+
+#----- Grass -----------------------------------------------------------------#
+grass_dat <- read.csv("../grass_cells_by_ecoregion_long_FRI.csv")
+
+dat <- grass_dat %>% group_by(Name) %>% 
+  summarise(Area = sum(Total_Area), 
+            Burned = sum(Area_Burned),
+            FRI_Total = sum(Sum_FRI)) %>%
+  filter(Area > 0) %>%
+  mutate(FRP = if_else(Burned > 0, hist_time/(Burned/Area), NA)) %>%
+  mutate(Mean_FRI = FRI_Total / Area) %>%
+  mutate(Deficit = (FRP / Mean_FRI) - 1) %>%
+  mutate(Area = (Area * prod(res(fri)))/10000,
+         Burned = (Burned * prod(res(fri)))/10000) %>%
+  select(-FRI_Total)
+
+eco$grass_def <- NA
+ind <- match(eco$NA_L3NAME, dat$Name)
+eco$grass_def <- dat$Deficit[ind]
+
+#----- Shrubs ----------------------------------------------------------------#
+shrub_dat <- read.csv("../shrub_cells_by_ecoregion_long_FRI.csv")
+
+dat <- shrub_dat %>% group_by(Name) %>% 
+  summarise(Area = sum(Total_Area), 
+            Burned = sum(Area_Burned),
+            FRI_Total = sum(Sum_FRI)) %>%
+  filter(Area > 0) %>%
+  mutate(FRP = if_else(Burned > 0, hist_time/(Burned/Area), NA)) %>%
+  mutate(Mean_FRI = FRI_Total / Area) %>%
+  mutate(Deficit = (FRP / Mean_FRI) - 1) %>%
+  mutate(Area = (Area * prod(res(fri)))/10000,
+         Burned = (Burned * prod(res(fri)))/10000) %>%
+  select(-FRI_Total)
+
+#----- Make this nice and readable -------------------------------------------#
+dat$Area   <- prettyNum(as.character(round(dat$Area, 0))  , big.mark=",")
+dat$Burned <- prettyNum(as.character(round(dat$Burned, 0)), big.mark=",")
+
+eco$shrub_def <- NA
+ind <- match(eco$NA_L3NAME, dat$Name)
+eco$shrub_def <- dat$Deficit[ind]
+
+terra::writeVector(eco, "../temp_rasters/ecoregions_with_deficit.shp")
+
+#----- Now rasters of all these ----------------------------------------------#
+def_rast <- rast(fri)
+allvegrast <- rasterize(eco, def_rast, field = "allveg_def", touches = TRUE)
+terra::writeRaster(allvegrast, "../temp_rasters/eco_all_veg_def.tif")
+rm(rasterized)
+
+forestrast <- rasterize(eco, def_rast, field = "forest_def", touches = TRUE)
+terra::writeRaster(forestrast, "../temp_rasters/eco_forest_def.tif")
+
+grassrast <- rasterize(eco, def_rast, field = "grass_def", touches = TRUE)
+terra::writeRaster(grassrast, "../temp_rasters/eco_grass_def.tif")
+
+shrubrast <- rasterize(eco, def_rast, field = "shrub_def", touches = TRUE)
+terra::writeRaster(shrubrast, "../temp_rasters/eco_shrub_def.tif")
+#plot(rasterized,range=c(0,10),
+#     fill_range=T)
 ```
 
 \newpage
@@ -1206,7 +1762,7 @@ knitr::kable(evc_codes[,1:2])
 
 From the docs:
 
-> The need for improved understanding and management of land surface change requires increased understanding of the basic drivers of change, identification of potential consequences of change on human and natural systems, and greater insight into the impacts and feedbacks of climate change. The geospatial community requires a new generation of monitoring data and information to meet this need for a wide range of applications. Land cover and land change products need to span larger geographic extents, over longer time periods, at higher spatial resolutions, and provide more systematic and consistent information on change than ever before. To help meet these growing demands, the United States Geological Survey (USGS) has developed the Land Change Monitoring, Assessment, and Projection (LCMAP) initiative.
+> The need for improved understanding and management of land surface change requires increased understanding of the basic drivers of change, identification of potential consequences of change on human and natural systems, and greater insight into the impacts and feedbacks of climate change. The geospatial community requires a new generation of monitoring data and information to meet this need for a wide range of applications. Land cover and land change products need to span larger geographic extents, over longer time periods, at higher spatial resolutions, and provide more systematic and consistent information on change than ever before. To help meet these growing demands, the United States Geological Survey (USGS) has developed the Land Change Monitoring, Assessment, and terra::projection (LCMAP) initiative.
 
 This is based on the National Land Cover Database (NLCD), and looks to be currently deprecated in favor of the NLCD.
 
@@ -1260,10 +1816,10 @@ Let's compare 2016 data for these two products to ours.
 
 ```{r crop-lcpri-rast-to-western-us}
 #| eval: false
-lcpri <- rast("../Data/Balch forest cover/LCMAP_CU_2016_V13_LCPRI.tif")
-study_domain <- rast("../temp_rasters/study_domain.tif")
-lcpri_crop <- crop(lcpri, study_domain)
-lcpri_crop <- mask(lcpri_crop, study_domain)
+lcpri <- terra::rast("../Data/Balch forest cover/LCMAP_CU_2016_V13_LCPRI.tif")
+study_domain <- terra::rast("../temp_rasters/study_domain.tif")
+lcpri_crop <- terra::crop(lcpri, study_domain)
+lcpri_crop <- terra::mask(lcpri_crop, study_domain)
 rm(lcpri)
 invisible(gc())
 
@@ -1272,13 +1828,13 @@ writeRaster(lcpri_crop, "../temp_rasters/lcpri_crop.tif")
 
 ```{r create-lcpri-western-us-forest-rast}
 #| eval: false
-lcpri_crop <- rast("../temp_rasters/lcpri_crop.tif")
-lcpri_crop <- classify(lcpri_crop, cbind(4,1), others=NA)
+lcpri_crop <- terra::rast("../temp_rasters/lcpri_crop.tif")
+lcpri_crop <- terra::classify(lcpri_crop, cbind(4,1), others=NA)
 writeRaster(lcpri_crop, "../temp_rasters/lcpri_forest.tif")
 ```
 
 ```{r results='asis'}
-lcms <- rast("../temp_rasters/lcms_forest.tif")
+lcms <- terra::rast("../temp_rasters/lcms_forest.tif")
 plot(lcms, axes=F, main="LCMS forest cover", col="darkgreen", legend = F)
 plot(states, add=T, fill=NULL)
 rm(lcms)
@@ -1286,7 +1842,7 @@ invisible(gc())
 
 cat("\n\n")
 
-lcpri <- rast("../temp_rasters/lcpri_forest.tif")
+lcpri <- terra::rast("../temp_rasters/lcpri_forest.tif")
 plot(lcpri, axes=F, main="LCPRI forest cover", col="darkgreen", legend = F)
 plot(states, add=T, fill=NULL)
 rm(lcpri)
@@ -1297,9 +1853,9 @@ invisible(gc())
 #-----------------------------------------------------------------------------#
 # Comparison of forest products
 #-----------------------------------------------------------------------------#
-#evc   <- rast("evc_forest.tif")
-#lcms  <- rast("lcms_forest.tif")
-#lcpri <- rast("lcpri_forest.tif")
+#evc   <- terra::rast("evc_forest.tif")
+#lcms  <- terra::rast("lcms_forest.tif")
+#lcpri <- terra::rast("lcpri_forest.tif")
 
 #x <- freq(evc)
 #evc_forest_area <- (x$count * prod(res(evc)))/10000
@@ -1315,25 +1871,25 @@ lcpri_forest_area <- 70939594
 
 
 knitr::kable(
-  data.frame("Raster" = c("Landfire EVC", "LCMS", "LCPRI"),
-            "Area" = c(prettyNum(evc_forest_area, big.mark=","), 
-                       prettyNum(lcms_forest_area, big.mark=","),
-                       prettyNum(lcpri_forest_area, big.mark=","))),
+  data.frame("raster" = c("Landfire EVC", "LCMS", "LCPRI"),
+             "Area" = c(prettyNum(evc_forest_area, big.mark=","), 
+                        prettyNum(lcms_forest_area, big.mark=","),
+                        prettyNum(lcpri_forest_area, big.mark=","))),
   col.names = c("Forest product", "Area (ha)"))
 ```
 
 ```{r create-three-way-forest-comparison}
 #| eval: false
-evc   <- rast("../temp_rasters/evc_forest.tif")
-lcms  <- rast("../temp_rasters/lcms_forest.tif")
-lcpri <- rast("../temp_rasters/lcpri_forest.tif")
+evc   <- terra::rast("../temp_rasters/evc_forest.tif")
+lcms  <- terra::rast("../temp_rasters/lcms_forest.tif")
+lcpri <- terra::rast("../temp_rasters/lcpri_forest.tif")
 
 all <- sum(evc, lcms, lcpri, na.rm=T)
 writeRaster(all, "../temp_rasters/forest_tally.tif")
 ```
 
 ```{r}
-all <- rast("../temp_rasters/forest_tally.tif")
+all <- terra::rast("../temp_rasters/forest_tally.tif")
 plot(all, axes=F, main="How many products say this place is forest?")
 plot(states, add=T, fill=NULL)
 ```
@@ -1362,22 +1918,22 @@ good_codes <- c(good_codes)
 mat <- matrix(c(evc_codes$VALUE[good_codes], rep(1, length(good_codes))), 
               nrow=length(good_codes), ncol=2)
 
-evc_crop <- rast("../temp_rasters/evc_crop.tif")
-evc <- classify(evc_crop, mat, others=NA)
+evc_crop <- terra::rast("../temp_rasters/evc_crop.tif")
+evc <- terra::classify(evc_crop, mat, others=NA)
 rm(evc_crop)
 gc()
 writeRaster(evc, "../temp_rasters/evc_forest_loose.tif", overwrite = TRUE)
 ```
 
 ```{r}
-evc <- rast("../temp_rasters/evc_forest_loose.tif")
+evc <- terra::rast("../temp_rasters/evc_forest_loose.tif")
 #x <- freq(evc)
 #evc_forest_area <- (x$count * prod(res(evc)))/10000
 evc_forest_area <- 73571515
 
 plot(evc, axes=F, legend=F, col="darkgreen",
      main=paste("EVC Looser Forest Definition -", 
-                             prettyNum(evc_forest_area, big.mark=","), "ha"))
+                prettyNum(evc_forest_area, big.mark=","), "ha"))
 plot(states, add=T, fill=NULL)
 ```
 
@@ -1406,7 +1962,7 @@ LCPRI has one "Cropland" and one "Grass/Shrub" cover class. Since this does not 
 ```{r}
 #| results: asis
 
-evc <- rast("../temp_rasters/evc_grass.tif")
+evc <- terra::rast("../temp_rasters/evc_grass.tif")
 #x <- freq(evc)
 #evc_grass_area <- (x$count * prod(res(evc)))/10000
 #evc_grass_area <- 78078768 with crops
@@ -1420,7 +1976,7 @@ invisible(gc())
 
 cat("\n\n")
 
-lcms <- rast("../temp_rasters/lcms_grass.tif")
+lcms <- terra::rast("../temp_rasters/lcms_grass.tif")
 x <- freq(lcms)
 lcms_grass_area <- (x$count * prod(res(lcms)))/10000
 #lcms_grass_area <- 160156968 with GRASS/FORB/HERB AND SHRUBS MIX
@@ -1459,7 +2015,7 @@ Other possibilities that I am omitting in this version: TALL SHRUBS AND TREES MI
 ```{r}
 #| results: asis
 
-evc <- rast("../temp_rasters/evc_shrub.tif")
+evc <- terra::rast("../temp_rasters/evc_shrub.tif")
 #x <- freq(evc)
 #evc_shrub_area <- (x$count * prod(res(evc)))/10000
 evc_shrub_area <- 123684737
@@ -1472,7 +2028,7 @@ invisible(gc())
 
 cat("\n\n")
 
-lcms <- rast("../temp_rasters/lcms_shrub.tif")
+lcms <- terra::rast("../temp_rasters/lcms_shrub.tif")
 #x <- freq(lcms)
 #lcms_shrub_area <- (x$count * prod(res(lcms)))/10000
 lcms_shrub_area <- 104228761
@@ -1497,23 +2053,23 @@ We eventually determined that LCMS did a pretty bad job of differentiating betwe
 #-----------------------------------------------------------------------------#
 
 #----- Load the BPS raster ---------------------------------------------------#
-fri <- rast("Z:/project_data/landfire data/LF2016_FRI_200_CONUS/Tif/LC16_FRI_200.tif")
+fri <- terra::rast("Z:/project_data/landfire data/LF2016_FRI_200_CONUS/Tif/LC16_FRI_200.tif")
 
 #----- Crop to bounding box of Western US ------------------------------------#
 # This is for WFFRC so split along line of 100 degrees west longitude
 # I did this exercise and did a transformation so I know the number in 
-# the FRI projection
-#west_us <- vect(ext(-125, -100, 27, 49.5), crs="+proj=longlat +datum=WGS84")
+# the FRI terra::projection
+#west_us <- terra::vect(ext(-125, -100, 27, 49.5), crs="+proj=longlat +datum=WGS84")
 split_longitude <- 293952
-west_us <- vect(matrix(c(ext(fri)$xmin,   ext(fri)$ymin, 
-                         ext(fri)$xmin,   ext(fri)$ymax, 
-                         split_longitude, ext(fri)$ymin, 
-                         split_longitude, ext(fri)$ymax, 
-                         ext(fri)$xmin,   ext(fri)$ymin),
-                         ncol = 2, byrow = TRUE), type = "polygons", 
-                 crs = crs(fri))
+west_us <- terra::vect(matrix(c(ext(fri)$xmin,   ext(fri)$ymin, 
+                                ext(fri)$xmin,   ext(fri)$ymax, 
+                                split_longitude, ext(fri)$ymin, 
+                                split_longitude, ext(fri)$ymax, 
+                                ext(fri)$xmin,   ext(fri)$ymin),
+                              ncol = 2, byrow = TRUE), type = "polygons", 
+                       crs = crs(fri))
 
-fri_crop <- crop(fri, west_us)
+fri_crop <- terra::crop(fri, west_us)
 ```
 
 \newpage
