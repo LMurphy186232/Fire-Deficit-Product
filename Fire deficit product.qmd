@@ -25,6 +25,11 @@ terraOptions(tempdir="D:/workspace/Lora/temp") # Terminator
 #terraOptions(tempdir="D:/Lora/temp") # Groot
 ```
 
+## SPARKs
+
+We want summary statistics on fire deficit for SPARK watershed regions. To produce these statistics, I used rasterized values of fire deficit where possible, in frequent fire areas. Areas in less-frequent fire areas (FRI > 40) received the value of the ecoregion-level deficit. There are different ecoregion-level deficit values for forest, grasslands, and shrublands (see later in this document for details) and the appropriate value was used for each vegetation type.
+
+
 ```{r spark-prep}
 #-----------------------------------------------------------------------------#
 # PLEASE NOTE:
@@ -134,7 +139,7 @@ for (spark_name in all_sparks) {
   forest_mask <- terra::ifel(veg_crop == "Forest", 1, NA)
   forest_fri <- terra::mask(fri_crop, forest_mask)
   
-  forest_mat <- cbind(c(0,20,40), c(19, 39, 10000), 1:3)
+  forest_mat <- cbind(c(0,20,40), c(20, 40, 100000), 1:3)
   forest_type <- terra::classify(forest_fri, forest_mat)
   levels(forest_type) <- data.frame(ID = 1:3, 
                                     category = c(
@@ -411,10 +416,13 @@ for (spark_name in all_sparks) {
   #  forest_types_plot + fire_def_plot +
   #  grassplot + shrubplot +# patchwork::plot_layout(nrow = 3) +
   #  patchwork::plot_annotation(title = "AZ-Coconino County")
-  
-  fri_plot + veg_map_plot
-  forest_types_plot + fire_def_plot 
-  grassplot + shrubplot 
+  spark_name <- gsub(spark_name, "/", "-", fixed=T)
+  ggsave(paste0(spark_name, "1.png"), plot= print(fri_plot + veg_map_plot), 
+         width = 8, units="in")
+  ggsave(paste0(spark_name, "2.png"), plot= print(forest_types_plot + fire_def_plot), 
+         width = 8, units="in")
+  ggsave(paste0(spark_name, "3.png"), plot= print(grassplot + shrubplot), 
+         width = 8, units="in")
   
   
   #----- Prep and display table ------------------------------------------------#
@@ -433,9 +441,9 @@ for (spark_name in all_sparks) {
   summary_dat$Deficit_area <- prettyNum(round(summary_dat$Deficit_area, 0), 
                                         big.mark = ",")
   
-  knitr::kable(summary_dat, col.names = c("Vegetation type", "Total area (ac)",
+  print(knitr::kable(summary_dat, col.names = c("Vegetation type", "Total area (ac)",
                                           "Area in surplus", "Area in deficit",
-                                          "Mean deficit"), digits = 1)
+                                          "Mean deficit"), digits = 1))
 }
 
 ```
