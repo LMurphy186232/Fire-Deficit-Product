@@ -25,12 +25,14 @@ terraOptions(tempdir="D:/workspace/Lora/temp") # Terminator
 #terraOptions(tempdir="D:/Lora/temp") # Groot
 ```
 
-## SPARKs
+# SPARKs
 
 We want summary statistics on fire deficit for SPARK watershed regions. To produce these statistics, I used rasterized values of fire deficit where possible, in frequent fire areas. Areas in less-frequent fire areas (FRI > 40) received the value of the ecoregion-level deficit. There are different ecoregion-level deficit values for forest, grasslands, and shrublands (see later in this document for details) and the appropriate value was used for each vegetation type.
 
 
-```{r spark-prep}
+```{r regions-prep}
+#| eval: false
+
 #-----------------------------------------------------------------------------#
 # PLEASE NOTE:
 # These chunks are now out of order overall. SPARK stuff must be run after the
@@ -43,6 +45,11 @@ veg <- terra::rast("../temp_rasters/combined_veg_area.tif")
 #----- Load SPARK watersheds -------------------------------------------------#
 spark <- terra::vect("../../Spark counties shapefile/spark_watersheds.shp")
 spark <- terra::project(spark, fri)
+
+#----- Load states -----------------------------------------------------------#
+states <- terra::vect("../Data/s_05mr24.shp")
+states <- terra::project(states, fri)
+states <- terra::crop(states, fri)
 
 #----- Some common aesthetics for plotting -----------------------------------#
 blank_axes <- theme(axis.title.x=element_blank(),
@@ -80,62 +87,55 @@ ha_to_acres <- 2.47105
 #plot(eco,range=c(-1,10),fill_range=T)
 ```
 
-```{r spark-regions}
+```{r do-a-region}
+#| eval: false
 
-all_sparks <- unique(spark$SPARK)
-all_sparks <- all_sparks[-grep("AK -", all_sparks)]
-all_sparks <- all_sparks[-grep("BC -", all_sparks)]
-
-for (spark_name in all_sparks) {
+do_a_region <- function(region_name, region_shape) {
   
-  one_spark <- spark[spark$SPARK == spark_name]
-  
-  cat("##", spark_name, "\n")
-  
-  #-----------------------------------------------------------------------------#
+  #---------------------------------------------------------------------------#
   # Make a nice map of all vegetation and FRI to amuse the reader
-  #-----------------------------------------------------------------------------#
+  #---------------------------------------------------------------------------#
   
-  #----- Clip FRI and display --------------------------------------------------#
-  fri_crop <- terra::crop(fri     , one_spark)
-  fri_crop <- terra::mask(fri_crop, one_spark)
+  #----- Clip FRI and display ------------------------------------------------#
+  fri_crop <- terra::crop(fri     , region_shape)
+  fri_crop <- terra::mask(fri_crop, region_shape)
   
   #plot(fri_crop)
   
   suppressMessages(fri_plot <- ggplot() + 
                      geom_spatraster(data = fri_crop) +
-                     geom_spatvector(data = one_spark, fill=NA) +
+                     geom_spatvector(data = region_shape, fill=NA) +
                      theme_bw() +
                      blank_axes +
                      ggtitle("Fire return interval") +
                      fri_scale)
   
-  #----- Clip veg and display --------------------------------------------------#
-  veg_crop <- terra::crop(veg     , one_spark)
-  veg_crop <- terra::mask(veg_crop, one_spark)
+  #----- Clip veg and display ------------------------------------------------#
+  veg_crop <- terra::crop(veg     , region_shape)
+  veg_crop <- terra::mask(veg_crop, region_shape)
   
   
   suppressMessages(veg_map_plot <- ggplot() + 
                      geom_spatraster(data = veg_crop) +
-                     geom_spatvector(data = one_spark, fill=NA) +
+                     geom_spatvector(data = region_shape, fill=NA) +
                      theme_bw() +
                      blank_axes +
                      ggtitle("Vegetation map") +
                      veg_scale)
   
-  #-----------------------------------------------------------------------------#
+  #---------------------------------------------------------------------------#
   
   
   
-  #-----------------------------------------------------------------------------#
+  #---------------------------------------------------------------------------#
   # Forests.
   # Frequent fire forests FRI 0-20 years
   # Frequent fire forest FRI 20-40
   # Infrequent fire forests (FRI > 40)
-  #-----------------------------------------------------------------------------#
+  #---------------------------------------------------------------------------#
   #cat("## Forest area\n\n")
   
-  #----- ID forests by fire frequency ------------------------------------------#
+  #----- ID forests by fire frequency ----------------------------------------#
   forest_mask <- terra::ifel(veg_crop == "Forest", 1, NA)
   forest_fri <- terra::mask(fri_crop, forest_mask)
   
@@ -150,28 +150,28 @@ for (spark_name in all_sparks) {
   invisible(gc())
   
   
-  #----- Make a total fire deficit map, including long deficit -----------------#
-  long_crop <- terra::crop(long_forst_def, one_spark)
-  long_crop <- terra::mask(long_crop     , one_spark)
+  #----- Make a total fire deficit map, including long deficit ---------------#
+  long_crop <- terra::crop(long_forst_def, region_shape)
+  long_crop <- terra::mask(long_crop     , region_shape)
   
-  short_crop <- terra::crop(short_def , one_spark)
-  short_crop <- terra::crop(short_crop, one_spark)
+  short_crop <- terra::crop(short_def , region_shape)
+  short_crop <- terra::crop(short_crop, region_shape)
   
-  #----- I want to only substitute eco-level deficit where there isn't short ---#
+  #----- I want to only substitute eco-level deficit where there isn't short -#
   long_crop <- terra::mask(long_crop, short_crop, inverse = T)
   all_def <- terra::subst(long_crop, NA, 0) + terra::subst(short_crop, NA, 0)
   rm(short_crop, long_crop)
   invisible(gc())
-  #----- Mask back to FRI, no values if FRI was NA -----------------------------#
+  #----- Mask back to FRI, no values if FRI was NA ---------------------------#
   all_def <- terra::mask(all_def, fri_crop)
   all_def <- terra::mask(all_def, forest_type)
   
-  #-----------------------------------------------------------------------------#
+  #---------------------------------------------------------------------------#
   # Entertain the reader with maps of forest type and deficit
-  #-----------------------------------------------------------------------------#
+  #---------------------------------------------------------------------------#
   suppressMessages(forest_types_plot <- ggplot() + 
                      geom_spatraster(data = forest_type) +
-                     geom_spatvector(data = one_spark, fill=NA) +
+                     geom_spatvector(data = region_shape, fill=NA) +
                      theme_bw() +
                      blank_axes +
                      #theme(legend.position = "bottom") +
@@ -179,20 +179,34 @@ for (spark_name in all_sparks) {
                      ggtitle("Forest types") +
                      forest_type_scale)
   
+  lims <- range(values(all_def), na.rm = T)
+  if (abs(lims[1]/lims[2]) > 1.5 || abs(lims[1]/lims[2]) < 0.75) {
+    threshold <- ceiling(min(abs(lims)))
+    breaks <- round(c(seq(from=-threshold, to=0, length=3),
+                seq(from=0, to = threshold, length=3)[2:3]), 0)
+    labels <- c(paste("<", breaks[1]), breaks[2:4], paste(">", breaks[5]))
+    deficit_scale <- scale_fill_grass_c(na.value = NA, name="Deficit < 0",
+                       limits = c(-threshold, threshold),
+                       breaks = breaks,
+                       labels = labels,
+                       oob = scales::squish) 
+  } else {
+    deficit_scale <- scale_fill_grass_c(na.value = NA, name="Deficit < 0")
+  }
+    
   suppressMessages(fire_def_plot <- ggplot() + 
                      geom_spatraster(data = all_def) +
-                     geom_spatvector(data = one_spark, fill=NA) +
+                     geom_spatvector(data = region_shape, fill=NA) +
                      theme_bw() +
                      blank_axes +
-                     #theme(legend.position = "bottom") +
                      ggtitle("Forests fire deficit/surplus") +
                      deficit_scale)
   
-  #-----------------------------------------------------------------------------#
+  #---------------------------------------------------------------------------#
   # Extract table stats
-  #-----------------------------------------------------------------------------#
+  #---------------------------------------------------------------------------#
   
-  #----- Overall area ----------------------------------------------------------#
+  #----- Overall area --------------------------------------------------------#
   vv <- values(forest_type)
   tab <- table(vv)
   
@@ -201,7 +215,7 @@ for (spark_name in all_sparks) {
   rm(vv, tab)
   invisible(gc())
   
-  #----- Area in surplus and deficit -------------------------------------------#
+  #----- Area in surplus and deficit -----------------------------------------#
   surplus <- terra::ifel(all_def > 0, 1, 0)
   datum <- terra::zonal(surplus, forest_type, fun="sum")
   if (identical(as.character(datum$category), summary_dat$Forest)) {
@@ -222,7 +236,7 @@ for (spark_name in all_sparks) {
   rm(deficit)
   invisible(gc())
   
-  #----- Mean and sd of deficit ------------------------------------------------#
+  #----- Mean and sd of deficit ----------------------------------------------#
   datum <- terra::zonal(all_def, forest_type, fun="mean")
   if (identical(as.character(datum$category), summary_dat$Forest)) {
     summary_dat$mean_deficit <- datum$forest_def
@@ -237,7 +251,7 @@ for (spark_name in all_sparks) {
     stop("heeeeeelp")
   }
   
-  #----- Clean up and get ready to display -------------------------------------#
+  #----- Clean up and get ready to display -----------------------------------#
   summary_dat$Total_area <- 
     ((summary_dat$Numcells * prod(res(forest_type)))/10000) * ha_to_acres
   
@@ -257,44 +271,60 @@ for (spark_name in all_sparks) {
   
   
   
-  #-----------------------------------------------------------------------------#
+  #---------------------------------------------------------------------------#
   # Grass
-  #-----------------------------------------------------------------------------#
+  #---------------------------------------------------------------------------#
   grass_mask <- terra::ifel(veg_crop == "Grass", 1, NA)
   #grass_fri  <- terra::mask(fri_crop, grass_mask)
   
-  #----- Make a total fire deficit map, including long deficit -----------------#
-  long_crop <- terra::crop(long_grass_def, one_spark)
-  long_crop <- terra::mask(long_crop     , one_spark)
+  #----- Make a total fire deficit map, including long deficit ---------------#
+  long_crop <- terra::crop(long_grass_def, region_shape)
+  long_crop <- terra::mask(long_crop     , region_shape)
   
-  short_crop <- terra::crop(short_def , one_spark)
-  short_crop <- terra::crop(short_crop, one_spark)
+  short_crop <- terra::crop(short_def , region_shape)
+  short_crop <- terra::crop(short_crop, region_shape)
   
-  #----- I want to only substitute eco-level deficit where there isn't short ---#
+  #----- I want to only substitute eco-level deficit where there isn't short -#
   long_crop <- terra::mask(long_crop, short_crop, inverse = T)
   all_def <- terra::subst(long_crop, NA, 0) + terra::subst(short_crop, NA, 0)
   rm(short_crop, long_crop)
   invisible(gc())
-  #----- Mask back to FRI, no values if FRI was NA -----------------------------#
+  #----- Mask back to FRI, no values if FRI was NA ---------------------------#
   all_def <- terra::mask(all_def, fri_crop)
   all_def <- terra::mask(all_def, grass_mask)
-  #-----------------------------------------------------------------------------#
+  #---------------------------------------------------------------------------#
   
   
   
-  #----- Prep a map of grass deficit -------------------------------------------#
+  #----- Prep a map of grass deficit -----------------------------------------#
+  
+   lims <- range(values(all_def), na.rm = T)
+  if (abs(lims[1]/lims[2]) > 1.5 || abs(lims[1]/lims[2]) < 0.75) {
+    threshold <- ceiling(min(abs(lims)))
+    breaks <- round(c(seq(from=-threshold, to=0, length=3),
+                seq(from=0, to = threshold, length=3)[2:3]), 0)
+    labels <- c(paste("<", breaks[1]), breaks[2:4], paste(">", breaks[5]))
+    deficit_scale <- scale_fill_grass_c(na.value = NA, name="Deficit < 0",
+                       limits = c(-threshold, threshold),
+                       breaks = breaks,
+                       labels = labels,
+                       oob = scales::squish) 
+  } else {
+    deficit_scale <- scale_fill_grass_c(na.value = NA, name="Deficit < 0")
+  }
+   
   suppressMessages(grassplot <- ggplot() + 
                      geom_spatraster(data = all_def) +
-                     geom_spatvector(data = one_spark, fill=NA) +
+                     geom_spatvector(data = region_shape, fill=NA) +
                      theme_bw() +
                      blank_axes +
                      #theme(legend.position = "bottom") +
                      ggtitle("Grass deficit/surplus") +
                      deficit_scale)
-  #-----------------------------------------------------------------------------#
+  #---------------------------------------------------------------------------#
   
   
-  #----- Extract table stats ---------------------------------------------------#
+  #----- Extract table stats -------------------------------------------------#
   
   # Overall area
   vv <- values(grass_mask)
@@ -303,7 +333,7 @@ for (spark_name in all_sparks) {
   rm(vv)
   invisible(gc())
   
-  #----- Area in surplus and deficit -------------------------------------------#
+  #----- Area in surplus and deficit -----------------------------------------#
   surplus <- terra::ifel(all_def > 0, 1, 0)
   vv <- values(surplus)
   surplus_cells <- sum(vv, na.rm=T)
@@ -315,7 +345,7 @@ for (spark_name in all_sparks) {
   rm(deficit, vv)
   invisible(gc())
   
-  #----- Mean and sd of deficit ------------------------------------------------#
+  #----- Mean and sd of deficit ----------------------------------------------#
   vv <- values(all_def)
   mean_deficit <- mean(vv, na.rm=T)
   sd_deficit   <- sd  (vv, na.rm=T)
@@ -330,47 +360,62 @@ for (spark_name in all_sparks) {
   ))
   rm(grass_mask, vv, all_def)
   invisible(gc())
-  #-----------------------------------------------------------------------------#
+  #---------------------------------------------------------------------------#
   
   
   
-  #-----------------------------------------------------------------------------#
+  #---------------------------------------------------------------------------#
   # Shrub
-  #-----------------------------------------------------------------------------#
+  #---------------------------------------------------------------------------#
   shrub_mask <- terra::ifel(veg_crop == "Shrub", 1, NA)
   
-  #----- Make a total fire deficit map, including long deficit -----------------#
-  long_crop <- terra::crop(long_shrub_def, one_spark)
-  long_crop <- terra::mask(long_crop     , one_spark)
+  #----- Make a total fire deficit map, including long deficit ---------------#
+  long_crop <- terra::crop(long_shrub_def, region_shape)
+  long_crop <- terra::mask(long_crop     , region_shape)
   
-  short_crop <- terra::crop(short_def , one_spark)
-  short_crop <- terra::crop(short_crop, one_spark)
+  short_crop <- terra::crop(short_def , region_shape)
+  short_crop <- terra::crop(short_crop, region_shape)
   
-  #----- I want to only substitute eco-level deficit where there isn't short ---#
+  #----- I want to only substitute eco-level deficit where there isn't short -#
   long_crop <- terra::mask(long_crop, short_crop, inverse = T)
   all_def <- terra::subst(long_crop, NA, 0) + terra::subst(short_crop, NA, 0)
   rm(short_crop, long_crop)
   invisible(gc())
-  #----- Mask back to FRI, no values if FRI was NA -----------------------------#
+  #----- Mask back to FRI, no values if FRI was NA ---------------------------#
   all_def <- terra::mask(all_def, fri_crop)
   all_def <- terra::mask(all_def, shrub_mask)
-  #-----------------------------------------------------------------------------#
+  #---------------------------------------------------------------------------#
   
   
   
-  #----- Prep a map of shrub deficit -------------------------------------------#
+  #----- Prep a map of shrub deficit -----------------------------------------#
+   lims <- range(values(all_def), na.rm = T)
+  if (abs(lims[1]/lims[2]) > 1.5 || abs(lims[1]/lims[2]) < 0.75) {
+    threshold <- ceiling(min(abs(lims)))
+    breaks <- round(c(seq(from=-threshold, to=0, length=3),
+                seq(from=0, to = threshold, length=3)[2:3]), 0)
+    labels <- c(paste("<", breaks[1]), breaks[2:4], paste(">", breaks[5]))
+    deficit_scale <- scale_fill_grass_c(na.value = NA, name="Deficit < 0",
+                       limits = c(-threshold, threshold),
+                       breaks = breaks,
+                       labels = labels,
+                       oob = scales::squish) 
+  } else {
+    deficit_scale <- scale_fill_grass_c(na.value = NA, name="Deficit < 0")
+  }
+   
   suppressMessages(shrubplot <- ggplot() + 
                      geom_spatraster(data = all_def) +
-                     geom_spatvector(data = one_spark, fill=NA) +
+                     geom_spatvector(data = region_shape, fill=NA) +
                      theme_bw() +
                      blank_axes +
                      #theme(legend.position = "bottom") +
                      ggtitle("Shrub deficit/surplus") +
                      deficit_scale)
-  #-----------------------------------------------------------------------------#
+  #---------------------------------------------------------------------------#
   
   
-  #----- Extract table stats ---------------------------------------------------#
+  #----- Extract table stats -------------------------------------------------#
   
   # Overall area
   vv <- values(shrub_mask)
@@ -379,7 +424,7 @@ for (spark_name in all_sparks) {
   rm(vv)
   invisible(gc())
   
-  #----- Area in surplus and deficit -------------------------------------------#
+  #----- Area in surplus and deficit -----------------------------------------#
   surplus <- terra::ifel(all_def > 0, 1, 0)
   vv <- values(surplus)
   surplus_cells <- sum(vv, na.rm=T)
@@ -391,7 +436,7 @@ for (spark_name in all_sparks) {
   rm(deficit, vv)
   invisible(gc())
   
-  #----- Mean and sd of deficit ------------------------------------------------#
+  #----- Mean and sd of deficit ----------------------------------------------#
   vv <- values(all_def)
   mean_deficit <- mean(vv, na.rm=T)
   sd_deficit   <- sd  (vv, na.rm=T)
@@ -406,50 +451,292 @@ for (spark_name in all_sparks) {
   ))
   rm(shrub_mask, vv, all_def)
   invisible(gc())
-  #-----------------------------------------------------------------------------#
+  #---------------------------------------------------------------------------#
   
   
-  #-----------------------------------------------------------------------------#
+  #---------------------------------------------------------------------------#
   # Plots
-  #-----------------------------------------------------------------------------#
+  #---------------------------------------------------------------------------#
   #fri_plot + veg_map_plot + 
   #  forest_types_plot + fire_def_plot +
   #  grassplot + shrubplot +# patchwork::plot_layout(nrow = 3) +
   #  patchwork::plot_annotation(title = "AZ-Coconino County")
-  spark_name <- gsub(spark_name, "/", "-", fixed=T)
-  ggsave(paste0(spark_name, "1.png"), plot= print(fri_plot + veg_map_plot), 
+  region_name <- gsub("/", "-", region_name, fixed=T)
+  ggsave(paste0("figs/", region_name, "1.png"), plot= print(fri_plot + veg_map_plot), 
          width = 8, units="in")
-  ggsave(paste0(spark_name, "2.png"), plot= print(forest_types_plot + fire_def_plot), 
+  ggsave(paste0("figs/", region_name, "2.png"), plot= print(forest_types_plot + fire_def_plot), 
          width = 8, units="in")
-  ggsave(paste0(spark_name, "3.png"), plot= print(grassplot + shrubplot), 
+  ggsave(paste0("figs/", region_name, "3.png"), plot= print(grassplot + shrubplot), 
          width = 8, units="in")
   
   
-  #----- Prep and display table ------------------------------------------------#
+  summary_dat$Region <- region_name
   
-  summary_dat$meansd <- paste(round(summary_dat$mean_deficit, 2), "$\\pm$", 
-                              round(summary_dat$sd_deficit, 2))
-  summary_dat$mean_deficit <- NULL
-  summary_dat$sd_deficit <- NULL
-  
-  summary_dat$Total_area <- prettyNum(round(summary_dat$Total_area, 0), 
-                                      big.mark = ",")
-  
-  summary_dat$Surplus_area <- prettyNum(round(summary_dat$Surplus_area, 0), 
-                                        big.mark = ",")
-  
-  summary_dat$Deficit_area <- prettyNum(round(summary_dat$Deficit_area, 0), 
-                                        big.mark = ",")
-  
-  print(knitr::kable(summary_dat, col.names = c("Vegetation type", "Total area (ac)",
-                                          "Area in surplus", "Area in deficit",
-                                          "Mean deficit"), digits = 1))
+  return(summary_dat)
 }
+```
+
+```{r spark-regions}
+#| eval: false
+
+all_sparks <- unique(spark$SPARK)
+all_sparks <- all_sparks[-grep("AK -", all_sparks)]
+all_sparks <- all_sparks[-grep("BC -", all_sparks)]
+
+summary_table_dat <- NULL
+
+for (spark_name in all_sparks) {
+  
+  one_spark <- spark[spark$SPARK == spark_name]
+  summary_dat <- do_a_region(spark_name, one_spark)
+  summary_table_dat <- rbind(summary_table_dat, summary_dat) 
+}
+
+write.csv(summary_table_dat, "SPARK stats.csv", row.names=F)
+rm(spark, all_sparks)
+```
+
+```{r}
+
+summary_dat <- read.csv("SPARK stats.csv")
+
+#----- Prep and display table ------------------------------------------------#
+
+summary_dat$meansd <- paste(round(summary_dat$mean_deficit, 2), "$\\pm$", 
+                            round(summary_dat$sd_deficit, 2))
+summary_dat$mean_deficit <- NULL
+summary_dat$sd_deficit <- NULL
+
+summary_dat$Total_area <- prettyNum(round(summary_dat$Total_area, 0), 
+                                    big.mark = ",")
+
+summary_dat$Surplus_area <- prettyNum(round(summary_dat$Surplus_area, 0), 
+                                      big.mark = ",")
+
+summary_dat$Deficit_area <- prettyNum(round(summary_dat$Deficit_area, 0), 
+                                      big.mark = ",")
+
+# Can't do this pretty table automagically for a Word doc
+#header_indexer <- rep(5, length(unique(summary_dat$SPARK)))
+#names(header_indexer) <- unique(summary_dat$SPARK)
+
+#summary_dat$SPARK <- NULL
+#kable(summary_dat, booktabs = TRUE,
+#      col.names = c("Vegetation type", "Total area (ac)",
+#                "Area in surplus", "Area in deficit",
+#                "Mean deficit"), 
+#  digits = 1) %>% 
+#  pack_rows(index = header_indexer)
+
+print(knitr::kable(summary_dat, col.names = c("Vegetation type", "Total area (ac)",
+                                              "Area in surplus", "Area in deficit",
+                                              "SPARK", "Mean deficit"), digits = 1))
+#}
 
 ```
 
+## WA - Klickitat County
+
+![](figs/WA - Klickitat County1.png)
+
+![](figs/WA - Klickitat County2.png)
+
+![](figs/WA - Klickitat County3.png)
+## CA - Santa Barbara County
+
+![](figs/CA - Santa Barbara County1.png)
+![](figs/CA - Santa Barbara County2.png)
+
+![](figs/CA - Santa Barbara County3.png)
+
+## CO - Gunnison County and Watersheds
+
+![](figs/CO - Gunnison County and Watersheds1.png)
+![](figs/CO - Gunnison County and Watersheds2.png)
+
+![](figs/CO - Gunnison County and Watersheds3.png)
+
+## WY - Upper Colorado Basin, Green River
+
+![](figs/WY - Upper Colorado Basin, Green River1.png)
+
+![](figs/WY - Upper Colorado Basin, Green River2.png)
+
+![](figs/WY - Upper Colorado Basin, Green River4.png)
+
+## AZ - Coconino County/Flagstaff Region
+
+![](figs/AZ - Coconino County-Flagstaff Region1.png)
+
+![](figs/AZ - Coconino County-Flagstaff Region2.png)
+
+![](figs/AZ - Coconino County-Flagstaff Region3.png)
+# States
+
+```{r state-regions}
+#| eval: false
+
+all_states <- unique(states$NAME)
+
+summary_table_dat <- NULL
+
+for (state_name in all_states) {
+  
+  one_state <- states[states$NAME == state_name]
+  summary_dat <- do_a_region(state_name, one_state)
+  summary_table_dat <- rbind(summary_table_dat, summary_dat) 
+}
+
+write.csv(summary_table_dat, "State stats.csv", row.names=F)
+```
+
+```{r}
+
+summary_dat <- read.csv("State stats.csv")
+
+#----- Prep and display table ------------------------------------------------#
+
+summary_dat$meansd <- paste(round(summary_dat$mean_deficit, 2), "$\\pm$", 
+                            round(summary_dat$sd_deficit, 2))
+summary_dat$mean_deficit <- NULL
+summary_dat$sd_deficit <- NULL
+
+summary_dat$Total_area <- prettyNum(round(summary_dat$Total_area, 0), 
+                                    big.mark = ",")
+
+summary_dat$Surplus_area <- prettyNum(round(summary_dat$Surplus_area, 0), 
+                                      big.mark = ",")
+
+summary_dat$Deficit_area <- prettyNum(round(summary_dat$Deficit_area, 0), 
+                                      big.mark = ",")
+
+# Can't do this pretty table automagically for a Word doc
+#header_indexer <- rep(5, length(unique(summary_dat$SPARK)))
+#names(header_indexer) <- unique(summary_dat$SPARK)
+
+#summary_dat$SPARK <- NULL
+#kable(summary_dat, booktabs = TRUE,
+#      col.names = c("Vegetation type", "Total area (ac)",
+#                "Area in surplus", "Area in deficit",
+#                "Mean deficit"), 
+#  digits = 1) %>% 
+#  pack_rows(index = header_indexer)
+
+print(knitr::kable(summary_dat, col.names = c("Vegetation type", "Total area (ac)",
+                                              "Area in surplus", "Area in deficit",
+                                              "State", "Mean deficit"), digits = 1))
+#}
+
+```
+
+## Arizona
+
+![](figs/Arizona1.png)
+
+![](figs/Arizona2.png)
+
+![](figs/Arizona3.png)
 
 
+
+## California
+
+![](figs/California1.png)
+
+![](figs/California2.png)
+
+![](figs/California3.png)
+
+## Colorado
+
+![](figs/Colorado1.png)
+
+![](figs/Colorado2.png)
+
+![](figs/Colorado3.png)
+
+## Idaho
+
+![](figs/Idaho1.png)
+
+![](figs/Idaho2.png)
+
+![](figs/Idaho3.png)
+
+## Kansas
+
+![](figs/Kansas1.png)
+
+![](figs/Kansas2.png)
+
+![](figs/Kansas3.png)
+
+## Montana
+
+![](figs/Montana1.png)
+
+![](figs/Montana2.png)
+
+![](figs/Montana3.png)
+
+## New Mexico
+
+![](figs/New Mexico1.png)
+
+![](figs/New Mexico2.png)
+
+![](figs/New Mexico3.png)
+
+
+## Nevada
+
+![](figs/Nevada1.png)
+
+![](figs/Nevada2.png)
+
+![](figs/Nevada3.png)
+
+
+## Oklahoma
+
+![](figs/Oklahoma1.png)
+
+![](figs/Oklahoma2.png)
+
+![](figs/Oklahoma3.png)
+
+## Oregon
+
+![](figs/Oregon1.png)
+
+![](figs/Oregon2.png)
+
+![](figs/Oregon3.png)
+
+
+## Utah
+
+![](figs/Utah1.png)
+
+![](figs/Utah2.png)
+
+![](figs/Utah3.png)
+
+## Washington
+
+![](figs/Washington1.png)
+
+![](figs/Washington2.png)
+
+![](figs/Washington3.png)
+
+## Wyoming
+
+![](figs/Wyoming1.png)
+
+![](figs/Wyoming2.png)
+
+![](figs/Wyoming3.png)
 
 # Landfire historical fire regime / fire return interval
 
@@ -634,9 +921,10 @@ plot(states, add=T, fill=NULL)
 
 # Fire deficit / surplus for FRI $\leq$ 40 years
 
-**Output:** raster called "western_us_fire_deficit.tif". The value in each raster is:
+**Output:** raster called "western_us_fire_deficit.tif". The value in each raster is the deficit or surplus. Values above zero are surplus, and represent the number of times more an area has burned than it should have (i.e. a value of 2 means the area has burned twice as many times as expected). Values below zero are deficit, and are interpretable in the same way (-2 means the area should have burned twice as much as it did).
 
-$$ def = \frac{N_{fire}}{40/FRI} $$ where $N_{fire}$ is the number of times each cell has burned in the 1984-2024 period, FRI is the fire return interval (from the "west_us_FRI.tif" raster), and 40 is the length of the study period. Thus, the value will be number of fires divided by number of expected fires. After that, 1 is subtracted to peg the values to 0; values greater than 0 indicate a fire surplus, and less than 0 are a deficit.
+The number of expected fires $N_{exp}$ in the 40 years of our burn data is $40/FRI$, and call $N_{act}$ the number of observed fires from the dataset. For surpluses, we take $N_{act}/N_{exp}$; for deficits, we take the inverse of that, and add a negative. (If an area has not burned ($N_{act}=0$), deficit will be equal to negative expected fires.)
+
 
 ```{r create-fire-count-raster}
 #| eval: false
@@ -664,10 +952,16 @@ writeRaster(r_count, "../temp_rasters/num_fires.tif")
 
 ```{r create-fire-deficit-raster}
 #| eval: false
-nfire <- terra::rast("../temp_rasters/num_fires.tif")
-fri <- terra::rast("../west_us_FRI.tif")
 
-def <- (nfire / (40/fri))-1
+#----- Actual number of fires ------------------------------------------------#
+n_act <- terra::rast("../temp_rasters/num_fires.tif")
+
+#----- Expected number of fires ----------------------------------------------#
+fri <- terra::rast("../west_us_FRI.tif")
+n_exp <- 40/fri
+
+def <- ifel(n_act > n_exp, n_act/n_exp, (-1 * n_exp/n_act))
+def <- ifel(n_act == 0 & n_exp > 0, -1 * n_exp, def)
 writeRaster(def, "../western_us_fire_deficit.tif", overwrite=T)
 ```
 
@@ -685,9 +979,9 @@ def <- terra::rast("../western_us_fire_deficit.tif")
 # Bias tweaks the scale. The higher the number, the more colors are stuffed
 # into the lower end of the scale.
 plot(def, axes=F,
-     range=c(-1,1),
+     range=c(-5,5),
      fill_range=T,
-     #col=map.pal("bgyr", bias=2.5),
+     col=map.pal("bgyr"),#, bias=2.5),
      main="Fire deficit / surplus")
 plot(states, add=T, fill=NULL)
 rm(def)
@@ -880,7 +1174,7 @@ writeRaster(fordef, "../forest_deficit.tif", overwrite=T)
 ```{r}
 fordef <- terra::rast("../forest_deficit.tif")
 plot(fordef, axes=F,
-     range=c(-1,1),
+     range=c(-5,5),
      fill_range=T,
      #col=map.pal("bgyr", bias=2.5),
      main="Forest area fire deficit / surplus")
@@ -1003,7 +1297,7 @@ writeRaster(fordef, "../grass_deficit.tif", overwrite=T)
 ```{r}
 fordef <- terra::rast("../grass_deficit.tif")
 plot(fordef, axes=F,
-     range=c(-1,1),
+     range=c(-5,2),
      fill_range=T,
      #col=map.pal("bgyr", bias=2.5),
      main="Grass area fire deficit / surplus")
@@ -1117,7 +1411,7 @@ writeRaster(fordef, "../shrub_deficit.tif", overwrite=T)
 ```{r}
 fordef <- terra::rast("../shrub_deficit.tif")
 plot(fordef, axes=F,
-     range=c(-1,1),
+     range=c(-5,5),
      fill_range=T,
      #col=map.pal("bgyr", bias=2.5),
      main="Shrub area fire deficit / surplus")
@@ -1166,7 +1460,7 @@ $$FRP = \frac{t}{\sum a_i / A} $$
 
 where *t* is the time period evaluated, $a_i$ is annual area burned in year *i*, and *A* is the size of the study area.
 
-This is the contemporary FRP. We can take the mean ecoregion FRI as the historical value. Ecoregion-level deficit / surplus will thus be contemporary divided by historical.
+This is the contemporary FRP. We can take the mean ecoregion FRI as the historical value. Ecoregion-level deficit / surplus will thus be contemporary divided by historical if contemporary is greater (surplus), or negative historical divided by contemporary if historical is greater (deficit). This makes the number interpretable in the same way as calculated for more frequent fire areas.
 
 **Need a double check here to make sure I've understood this right:** When considering the area *A* and the burned areas $a_i$, I am only considering pixels within the subsetted areas: within the ecoregion, within those areas where FRI \> 40 years, within the vegetation type in question. Same when calculating mean FRI.
 
@@ -1403,7 +1697,8 @@ dat <- all_veg_dat %>% group_by(Name) %>%
   filter(Area > 0) %>%
   mutate(FRP = if_else(Burned > 0, hist_time/(Burned/Area), NA)) %>%
   mutate(Mean_FRI = FRI_Total / Area) %>%
-  mutate(Deficit = (FRP / Mean_FRI) - 1) %>%
+  #mutate(Deficit =  (FRP / Mean_FRI) - 1) %>%
+  mutate(Deficit = ifelse (FRP > Mean_FRI, FRP / Mean_FRI, -1 * Mean_FRI / FRP)) %>%
   mutate(Area = (Area * prod(res(fri)))/10000,
          Burned = (Burned * prod(res(fri)))/10000) %>%
   select(-FRI_Total)
@@ -1431,7 +1726,8 @@ dat <- forest_dat %>% group_by(Name) %>%
   filter(Area > 0) %>%
   mutate(FRP = if_else(Burned > 0, hist_time/(Burned/Area), NA)) %>%
   mutate(Mean_FRI = FRI_Total / Area) %>%
-  mutate(Deficit = (FRP / Mean_FRI) - 1) %>%
+  #mutate(Deficit =  (FRP / Mean_FRI) - 1) %>%
+  mutate(Deficit = ifelse (FRP > Mean_FRI, FRP / Mean_FRI, -1 * Mean_FRI / FRP)) %>%
   mutate(Area = (Area * prod(res(fri)))/10000,
          Burned = (Burned * prod(res(fri)))/10000) %>%
   select(-FRI_Total)
@@ -1458,7 +1754,8 @@ dat <- grass_dat %>% group_by(Name) %>%
   filter(Area > 0) %>%
   mutate(FRP = if_else(Burned > 0, hist_time/(Burned/Area), NA)) %>%
   mutate(Mean_FRI = FRI_Total / Area) %>%
-  mutate(Deficit = (FRP / Mean_FRI) - 1) %>%
+  #mutate(Deficit =  (FRP / Mean_FRI) - 1) %>%
+  mutate(Deficit = ifelse (FRP > Mean_FRI, FRP / Mean_FRI, -1 * Mean_FRI / FRP)) %>%
   mutate(Area = (Area * prod(res(fri)))/10000,
          Burned = (Burned * prod(res(fri)))/10000) %>%
   select(-FRI_Total)
@@ -1485,7 +1782,8 @@ dat <- shrub_dat %>% group_by(Name) %>%
   filter(Area > 0) %>%
   mutate(FRP = if_else(Burned > 0, hist_time/(Burned/Area), NA)) %>%
   mutate(Mean_FRI = FRI_Total / Area) %>%
-  mutate(Deficit = (FRP / Mean_FRI) - 1) %>%
+  #mutate(Deficit =  (FRP / Mean_FRI) - 1) %>%
+  mutate(Deficit = ifelse (FRP > Mean_FRI, FRP / Mean_FRI, -1 * Mean_FRI / FRP)) %>%
   mutate(Area = (Area * prod(res(fri)))/10000,
          Burned = (Burned * prod(res(fri)))/10000) %>%
   select(-FRI_Total)
@@ -1541,7 +1839,7 @@ dat <- all_veg_dat %>% group_by(Name) %>%
   filter(Area > 0) %>%
   mutate(FRP = if_else(Burned > 0, hist_time/(Burned/Area), NA)) %>%
   mutate(Mean_FRI = FRI_Total / Area) %>%
-  mutate(Deficit = (FRP / Mean_FRI) - 1) %>%
+  mutate(Deficit = ifelse (FRP > Mean_FRI, FRP / Mean_FRI, -1 * Mean_FRI / FRP)) %>%
   mutate(Area = (Area * prod(res(fri)))/10000,
          Burned = (Burned * prod(res(fri)))/10000) %>%
   select(-FRI_Total)
@@ -1560,7 +1858,7 @@ dat <- forest_dat %>% group_by(Name) %>%
   filter(Area > 0) %>%
   mutate(FRP = if_else(Burned > 0, hist_time/(Burned/Area), NA)) %>%
   mutate(Mean_FRI = FRI_Total / Area) %>%
-  mutate(Deficit = (FRP / Mean_FRI) - 1) %>%
+  mutate(Deficit = ifelse (FRP > Mean_FRI, FRP / Mean_FRI, -1 * Mean_FRI / FRP)) %>%
   mutate(Area = (Area * prod(res(fri)))/10000,
          Burned = (Burned * prod(res(fri)))/10000) %>%
   select(-FRI_Total)
@@ -1579,7 +1877,7 @@ dat <- grass_dat %>% group_by(Name) %>%
   filter(Area > 0) %>%
   mutate(FRP = if_else(Burned > 0, hist_time/(Burned/Area), NA)) %>%
   mutate(Mean_FRI = FRI_Total / Area) %>%
-  mutate(Deficit = (FRP / Mean_FRI) - 1) %>%
+  mutate(Deficit = ifelse (FRP > Mean_FRI, FRP / Mean_FRI, -1 * Mean_FRI / FRP)) %>%
   mutate(Area = (Area * prod(res(fri)))/10000,
          Burned = (Burned * prod(res(fri)))/10000) %>%
   select(-FRI_Total)
@@ -1598,7 +1896,7 @@ dat <- shrub_dat %>% group_by(Name) %>%
   filter(Area > 0) %>%
   mutate(FRP = if_else(Burned > 0, hist_time/(Burned/Area), NA)) %>%
   mutate(Mean_FRI = FRI_Total / Area) %>%
-  mutate(Deficit = (FRP / Mean_FRI) - 1) %>%
+  mutate(Deficit = ifelse (FRP > Mean_FRI, FRP / Mean_FRI, -1 * Mean_FRI / FRP)) %>%
   mutate(Area = (Area * prod(res(fri)))/10000,
          Burned = (Burned * prod(res(fri)))/10000) %>%
   select(-FRI_Total)
@@ -1611,22 +1909,22 @@ eco$shrub_def <- NA
 ind <- match(eco$NA_L3NAME, dat$Name)
 eco$shrub_def <- dat$Deficit[ind]
 
-terra::writeVector(eco, "../temp_rasters/ecoregions_with_deficit.shp")
+terra::writeVector(eco, "../temp_rasters/ecoregions_with_deficit.shp", overwrite=T)
 
 #----- Now rasters of all these ----------------------------------------------#
 def_rast <- rast(fri)
 allvegrast <- rasterize(eco, def_rast, field = "allveg_def", touches = TRUE)
-terra::writeRaster(allvegrast, "../temp_rasters/eco_all_veg_def.tif")
+terra::writeRaster(allvegrast, "../temp_rasters/eco_all_veg_def.tif", overwrite=T)
 rm(rasterized)
 
 forestrast <- rasterize(eco, def_rast, field = "forest_def", touches = TRUE)
-terra::writeRaster(forestrast, "../temp_rasters/eco_forest_def.tif")
+terra::writeRaster(forestrast, "../temp_rasters/eco_forest_def.tif", overwrite=T)
 
 grassrast <- rasterize(eco, def_rast, field = "grass_def", touches = TRUE)
-terra::writeRaster(grassrast, "../temp_rasters/eco_grass_def.tif")
+terra::writeRaster(grassrast, "../temp_rasters/eco_grass_def.tif", overwrite=T)
 
 shrubrast <- rasterize(eco, def_rast, field = "shrub_def", touches = TRUE)
-terra::writeRaster(shrubrast, "../temp_rasters/eco_shrub_def.tif")
+terra::writeRaster(shrubrast, "../temp_rasters/eco_shrub_def.tif", overwrite=T )
 #plot(rasterized,range=c(0,10),
 #     fill_range=T)
 ```
@@ -2153,3 +2451,4 @@ For grass and shrub comparisons, grass looks pretty good. Shrubs - we are gonna 
 For long FRI groups, what I have calculated is the contemporary fire regime. Mean FRI on the ecoregion level is equal to the historical fire rotation period. So deficit/surplus is contemporary divided by historical.
 
 Analysis: calculating deficit / surplus for all pixels where FRI \< 40, regardless of vegetation type (exluding developed areas). Subset by veg type by masking out our veg rasters. Then do an equivalent approach at ecoregion level. Ecoregion level total deficit/surplus, then forest deficit/surplus, grassland, shrub.
+
