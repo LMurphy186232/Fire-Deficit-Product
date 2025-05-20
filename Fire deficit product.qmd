@@ -16,6 +16,7 @@ library(exactextractr)
 library(tidyverse)
 library(tidyterra)
 library(patchwork)
+library(gpkg)
 knitr::opts_chunk$set(echo = FALSE)
 knitr::opts_chunk$set(messages = FALSE)
 knitr::opts_chunk$set(warnings = FALSE)
@@ -28,7 +29,6 @@ terraOptions(tempdir="D:/workspace/Lora/temp") # Terminator
 # SPARKs
 
 We want summary statistics on fire deficit for SPARK watershed regions. To produce these statistics, I used rasterized values of fire deficit where possible, in frequent fire areas. Areas in less-frequent fire areas (FRI > 40) received the value of the ecoregion-level deficit. There are different ecoregion-level deficit values for forest, grasslands, and shrublands (see later in this document for details) and the appropriate value was used for each vegetation type.
-
 
 ```{r regions-prep}
 #| eval: false
@@ -496,10 +496,56 @@ write.csv(summary_table_dat, "SPARK stats.csv", row.names=F)
 rm(spark, all_sparks)
 ```
 
-```{r}
+```{r make-spark-summary-plot}
+#| eval: false
 
 summary_dat <- read.csv("SPARK stats.csv")
 
+#----- A nice graph showing all the regions ----------------------------------#
+summary_dat$def_lower <- summary_dat$mean_deficit - summary_dat$sd_deficit
+summary_dat$def_upper <- summary_dat$mean_deficit + summary_dat$sd_deficit
+
+# Make short display names for SPARKs
+summary_dat$SPARK <- NA
+x <- which(summary_dat$Region == "AZ - Coconino County-Flagstaff Region")
+summary_dat$SPARK[x] <- "AZ Flagstaff"
+x <- which(summary_dat$Region == "CA - Santa Barbara County")
+summary_dat$SPARK[x] <- "CA Sta. Barbara"
+x <- which(summary_dat$Region == "CA - Tahoe Sierra SPARK")
+summary_dat$SPARK[x] <- "CA Tahoe"
+x <- which(summary_dat$Region == "CO - Gunnison County and Watersheds")
+summary_dat$SPARK[x] <- "CO Gunnison Co"
+x <- which(summary_dat$Region == "WA - Klickitat County")
+summary_dat$SPARK[x] <- "WA Klickitat Co"
+x <- which(summary_dat$Region == "WY - Upper Colorado Basin, Green River")
+summary_dat$SPARK[x] <- "WY Colorado/Green"
+
+suppressMessages(region_plot <- 
+  ggplot(summary_dat, aes(x = SPARK, y = mean_deficit, color = Forest)) +
+  geom_point(position = position_dodge(width = 0.5), size = 3) +
+  geom_errorbar(
+    aes(ymin = def_lower, ymax = def_upper),
+    position = position_dodge(width = 0.5),
+    width = 0.2
+  ) +
+  geom_hline(yintercept = 0) +
+  ylim(c(min(summary_dat$def_lower) - 0.5, 10)) +
+  labs(
+    title = "Mean deficit by SPARK (negative values = deficit)",
+    x = "",
+    y = "Fire deficit (bars show sd)",
+    color = NULL,
+    caption = "Two shrubs omitted for readability"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom"))
+ggsave("figs/spark_summary.png", region_plot, width=8.25)
+```
+
+![](figs/spark_summary.png)
+
+```{r}
+summary_dat <- read.csv("SPARK stats.csv")
 #----- Prep and display table ------------------------------------------------#
 
 summary_dat$meansd <- paste(round(summary_dat$mean_deficit, 2), "$\\pm$", 
@@ -515,6 +561,8 @@ summary_dat$Surplus_area <- prettyNum(round(summary_dat$Surplus_area, 0),
 
 summary_dat$Deficit_area <- prettyNum(round(summary_dat$Deficit_area, 0), 
                                       big.mark = ",")
+
+
 
 # Can't do this pretty table automagically for a Word doc
 #header_indexer <- rep(5, length(unique(summary_dat$SPARK)))
@@ -534,6 +582,8 @@ print(knitr::kable(summary_dat, col.names = c("Vegetation type", "Total area (ac
 #}
 
 ```
+
+
 
 ## WA - Klickitat County
 
@@ -571,12 +621,17 @@ print(knitr::kable(summary_dat, col.names = c("Vegetation type", "Total area (ac
 ![](figs/AZ - Coconino County-Flagstaff Region2.png)
 
 ![](figs/AZ - Coconino County-Flagstaff Region3.png)
+
 # States
 
 ```{r state-regions}
 #| eval: false
 
 all_states <- unique(states$NAME)
+
+# Remove state slivers
+all_states <- all_states[which(!all_states %in% c("North Dakota", "Texas", 
+                                                  "South Dakota", "Nebraska"))]
 
 summary_table_dat <- NULL
 
@@ -589,6 +644,49 @@ for (state_name in all_states) {
 
 write.csv(summary_table_dat, "State stats.csv", row.names=F)
 ```
+
+```{r make-state-summary-plot}
+#| eval: false
+
+summary_dat <- read.csv("State stats.csv")
+
+#----- A nice graph showing all the regions ----------------------------------#
+summary_dat$def_lower <- summary_dat$mean_deficit - summary_dat$sd_deficit
+summary_dat$def_upper <- summary_dat$mean_deficit + summary_dat$sd_deficit
+
+# Make short display names
+state_names <- c("Arizona" = "AZ", "California" = "CA", "Colorado" = "CO",
+                 "Idaho" = "ID", "Kansas" = "KS", "Montana" = "MT",
+                 "New Mexico" = "NM", "Nevada" = "NV", "Oklahoma" = "OK",
+                 "Oregon" = "OR", "Utah" = "UT", "Washington" = "WA",
+                 "Wyoming" = "WY")
+summary_dat$State <- NA
+ind <- match(summary_dat$Region, names(state_names))
+summary_dat$State <- state_names[ind]
+
+suppressMessages(region_plot <- 
+  ggplot(summary_dat, aes(x = State, y = mean_deficit, color = Forest)) +
+  geom_point(position = position_dodge(width = 0.5), size = 3) +
+  geom_errorbar(
+    aes(ymin = def_lower, ymax = def_upper),
+    position = position_dodge(width = 0.5),
+    width = 0.2
+  ) +
+  geom_hline(yintercept = 0) +
+  ylim(c(-15, 28)) +
+  labs(
+    title = "Mean deficit by state (negative values = deficit)",
+    x = "",
+    y = "Fire deficit (bars show sd)",
+    color = NULL,
+    caption = "Some outliers omitted for readability"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom"))
+#ggsave("figs/state_summary.png", region_plot, width=8.25)
+```
+
+![](figs/state_summary.png)
 
 ```{r}
 
@@ -737,6 +835,45 @@ print(knitr::kable(summary_dat, col.names = c("Vegetation type", "Total area (ac
 ![](figs/Wyoming2.png)
 
 ![](figs/Wyoming3.png)
+
+# WUI
+
+
+
+# Recent burns 
+
+In order to calculate fire deficit / surplus, we need the the best possible record of recent fires. We are using the WUMI dataset created by Park Williams and compiled by Tyler McIntosh. This dataset can be downloaded from the WFFRC Cyverse folder.
+
+We use this dataset by turning it into a raster of times each pixel has burned.
+
+**Output:** raster "num_fires.tif"
+
+
+```{r create-fire-count-raster}
+#| eval: false
+
+#-----------------------------------------------------------------------------#
+# This creates a raster where each cell is a count of the number of fire 
+# polygons that intersect it.
+#-----------------------------------------------------------------------------#
+
+#----- Fire perimeters from Tyler --------------------------------------------#
+wumi_gpkg <- geopackage("Z:/project_data/western_fire/WUMI/WUMI_20250509_main_fires_unified/WUMI_20250509_main_fires_unified.gpkg")
+fire_perimeters <- gpkg_vect(wumi_gpkg, "WUMI_20250509_main_fires_unified") 
+
+#----- Fire return interval --------------------------------------------------#
+fri <- terra::rast("../west_us_FRI.tif")
+
+fire_perimeters <- terra::project(fire_perimeters, fri)
+
+#----- Create an output raster -----------------------------------------------#
+num_burns <- terra::rast(fri)
+
+# rasterize using function to count overlapping polygons
+r_count <- rasterize(fire_perimeters, num_burns, fun="count", background = 0)
+writeRaster(r_count, "../temp_rasters/num_fires.tif")
+```
+
 
 # Landfire historical fire regime / fire return interval
 
@@ -924,31 +1061,6 @@ plot(states, add=T, fill=NULL)
 **Output:** raster called "western_us_fire_deficit.tif". The value in each raster is the deficit or surplus. Values above zero are surplus, and represent the number of times more an area has burned than it should have (i.e. a value of 2 means the area has burned twice as many times as expected). Values below zero are deficit, and are interpretable in the same way (-2 means the area should have burned twice as much as it did).
 
 The number of expected fires $N_{exp}$ in the 40 years of our burn data is $40/FRI$, and call $N_{act}$ the number of observed fires from the dataset. For surpluses, we take $N_{act}/N_{exp}$; for deficits, we take the inverse of that, and add a negative. (If an area has not burned ($N_{act}=0$), deficit will be equal to negative expected fires.)
-
-
-```{r create-fire-count-raster}
-#| eval: false
-
-#-----------------------------------------------------------------------------#
-# This creates a raster where each cell is a count of the number of fire 
-# polygons that intersect it.
-#-----------------------------------------------------------------------------#
-
-#----- Fire perimeters from Mahsa --------------------------------------------#
-fire_perimeters <- terra::vect("Z:/Mahsa_GF_data/goodfire_data_jan25/goodfire_1985to2024_f1jan25.shp")
-
-#----- Fire return interval --------------------------------------------------#
-fri <- terra::rast("../west_us_FRI.tif")
-
-fire_perimeters <- terra::project(fire_perimeters, fri)
-
-#----- Create an output raster -----------------------------------------------#
-num_burns <- terra::rast(fri)
-
-# rasterize using function to count overlapping polygons
-r_count <- rasterize(fire_perimeters, num_burns, fun="count", background = 0)
-writeRaster(r_count, "../temp_rasters/num_fires.tif")
-```
 
 ```{r create-fire-deficit-raster}
 #| eval: false
