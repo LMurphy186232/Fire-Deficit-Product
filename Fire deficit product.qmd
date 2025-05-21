@@ -41,6 +41,7 @@ We want summary statistics on fire deficit for SPARK watershed regions. To produ
 #-----------------------------------------------------------------------------#
 fri <- terra::rast("../temp_rasters/all_fri_vals.tif")
 veg <- terra::rast("../temp_rasters/combined_veg_area.tif")
+wui <- terra::rast("../temp_rasters/wui.tif")
 
 #----- Load SPARK watersheds -------------------------------------------------#
 spark <- terra::vect("../../Spark counties shapefile/spark_watersheds.shp")
@@ -123,6 +124,9 @@ do_a_region <- function(region_name, region_shape) {
                      ggtitle("Vegetation map") +
                      veg_scale)
   
+  #----- Clip WUI ------------------------------------------------------------#
+  wui_crop <- terra::crop(wui     , region_shape)
+  wui_crop <- terra::mask(wui_crop, region_shape)
   #---------------------------------------------------------------------------#
   
   
@@ -251,6 +255,50 @@ do_a_region <- function(region_name, region_shape) {
     stop("heeeeeelp")
   }
   
+  #---------------------------------------------------------------------------#
+  # Forest WUI 
+  #---------------------------------------------------------------------------#
+  summary_dat <- rbind(summary_dat, 
+                       data.frame(Forest = c("Forest WUI", "Forest non-WUI"),
+                                  Numcells = 0, Numsurpluscells = 0, 
+                                  Numdeficitcells = 0, mean_deficit = 0,
+                                  sd_deficit = 0))
+  
+  #----- Overall forest WUI area ---------------------------------------------#
+  datum <- mask(wui_crop, forest_type)
+  summary_dat$Numcells[summary_dat$Forest == "Forest WUI"] <- sum(!is.na(values(datum)), na.rm=T)
+  datum <- mask(forest_type, wui_crop, inverse=T)
+  summary_dat$Numcells[summary_dat$Forest == "Forest non-WUI"] <- sum(!is.na(values(datum)), na.rm=T)
+  rm(datum)
+  invisible(gc())
+  
+  #----- Area in surplus and deficit -----------------------------------------#
+  surplus <- terra::ifel(all_def > 0, 1, NA)
+  surp <- terra::mask(surplus, wui_crop)
+  summary_dat$Numsurpluscells[summary_dat$Forest == "Forest WUI"] <- sum(values(surp), na.rm=T)
+  surp <- terra::mask(surplus, wui_crop, inverse = T)
+  summary_dat$Numsurpluscells[summary_dat$Forest == "Forest non-WUI"] <- sum(values(surp), na.rm=T)
+  
+  rm(surplus, surp)
+  invisible(gc())
+  
+  deficit <- terra::ifel(all_def < 0, 1, NA)
+  defr <- terra::mask(deficit, wui_crop)
+  summary_dat$Numdeficitcells[summary_dat$Forest == "Forest WUI"] <- sum(values(defr), na.rm=T)
+  defr <- terra::mask(deficit, wui_crop, inverse = T)
+  summary_dat$Numdeficitcells[summary_dat$Forest == "Forest non-WUI"] <- sum(values(defr), na.rm=T)
+  rm(deficit, defr)
+  invisible(gc())
+  
+  #----- Mean and sd of deficit ----------------------------------------------#
+  defr <- terra::mask(all_def, wui_crop)
+  summary_dat$mean_deficit[summary_dat$Forest == "Forest WUI"] <- mean(values(defr), na.rm=T)
+  summary_dat$sd_deficit  [summary_dat$Forest == "Forest WUI"] <- sd(values(defr), na.rm=T)
+  
+  defr <- terra::mask(all_def, wui_crop, inverse=T)
+  summary_dat$mean_deficit[summary_dat$Forest == "Forest non-WUI"] <- mean(values(defr), na.rm=T)
+  summary_dat$sd_deficit  [summary_dat$Forest == "Forest non-WUI"] <- sd(values(defr), na.rm=T)
+  
   #----- Clean up and get ready to display -----------------------------------#
   summary_dat$Total_area <- 
     ((summary_dat$Numcells * prod(res(forest_type)))/10000) * ha_to_acres
@@ -267,7 +315,6 @@ do_a_region <- function(region_name, region_shape) {
   
   rm(forest_type)
   invisible(gc())
-  
   
   
   
@@ -358,6 +405,57 @@ do_a_region <- function(region_name, region_shape) {
     mean_deficit = mean_deficit,
     sd_deficit = sd_deficit
   ))
+  
+  #---------------------------------------------------------------------------#
+  # Grass WUI 
+  #---------------------------------------------------------------------------#
+  summary_dat <- rbind(summary_dat, 
+                       data.frame(Forest = c("Grass WUI", "Grass non-WUI"),
+                                  Total_area = 0, Surplus_area = 0, 
+                                  Deficit_area = 0, mean_deficit = 0,
+                                  sd_deficit = 0))
+  
+  #----- Overall grass WUI area ---------------------------------------------#
+  datum <- mask(grass_mask, wui_crop)
+  numcells <- sum(!is.na(values(datum)), na.rm=T)
+  summary_dat$Total_area[summary_dat$Forest == "Grass WUI"] <- ((numcells * prod(res(grass_mask)))/10000) * ha_to_acres
+  datum <- mask(grass_mask, wui_crop, inverse=T)
+  numcells <- sum(!is.na(values(datum)), na.rm=T)
+  summary_dat$Total_area[summary_dat$Forest == "Grass non-WUI"] <- ((numcells * prod(res(grass_mask)))/10000) * ha_to_acres
+  rm(datum)
+  invisible(gc())
+  
+  #----- Area in surplus and deficit -----------------------------------------#
+  surplus <- terra::ifel(all_def > 0, 1, NA)
+  surp <- terra::mask(surplus, wui_crop)
+  numcells <- sum(values(surp), na.rm=T)
+  summary_dat$Surplus_area[summary_dat$Forest == "Grass WUI"] <- ((numcells * prod(res(grass_mask)))/10000) * ha_to_acres
+  surp <- terra::mask(surplus, wui_crop, inverse = T)
+  numcells <- sum(values(surp), na.rm=T)
+  summary_dat$Surplus_area[summary_dat$Forest == "Grass non-WUI"] <- ((numcells * prod(res(grass_mask)))/10000) * ha_to_acres
+  
+  rm(surplus, surp)
+  invisible(gc())
+  
+  deficit <- terra::ifel(all_def < 0, 1, NA)
+  defr <- terra::mask(deficit, wui_crop)
+  numcells <- sum(values(defr), na.rm=T)
+  summary_dat$Deficit_area[summary_dat$Forest == "Grass WUI"] <- ((numcells * prod(res(grass_mask)))/10000) * ha_to_acres
+  defr <- terra::mask(deficit, wui_crop, inverse = T)
+  numcells <- sum(values(defr), na.rm=T)
+  summary_dat$Deficit_area[summary_dat$Forest == "Grass non-WUI"] <- ((numcells * prod(res(grass_mask)))/10000) * ha_to_acres
+  rm(deficit, defr)
+  invisible(gc())
+  
+  #----- Mean and sd of deficit ----------------------------------------------#
+  defr <- terra::mask(all_def, wui_crop)
+  summary_dat$mean_deficit[summary_dat$Forest == "Grass WUI"] <- mean(values(defr), na.rm=T)
+  summary_dat$sd_deficit  [summary_dat$Forest == "Grass WUI"] <- sd(values(defr), na.rm=T)
+  
+  defr <- terra::mask(all_def, wui_crop, inverse=T)
+  summary_dat$mean_deficit[summary_dat$Forest == "Grass non-WUI"] <- mean(values(defr), na.rm=T)
+  summary_dat$sd_deficit  [summary_dat$Forest == "Grass non-WUI"] <- sd(values(defr), na.rm=T)
+  
   rm(grass_mask, vv, all_def)
   invisible(gc())
   #---------------------------------------------------------------------------#
@@ -449,7 +547,58 @@ do_a_region <- function(region_name, region_shape) {
     mean_deficit = mean_deficit,
     sd_deficit = sd_deficit
   ))
-  rm(shrub_mask, vv, all_def)
+  
+  #---------------------------------------------------------------------------#
+  # Shrub WUI 
+  #---------------------------------------------------------------------------#
+  summary_dat <- rbind(summary_dat, 
+                       data.frame(Forest = c("Shrub WUI", "Shrub non-WUI"),
+                                  Total_area = 0, Surplus_area = 0, 
+                                  Deficit_area = 0, mean_deficit = 0,
+                                  sd_deficit = 0))
+  
+  #----- Overall Shrub WUI area ---------------------------------------------#
+  datum <- mask(shrub_mask, wui_crop)
+  numcells <- sum(!is.na(values(datum)), na.rm=T)
+  summary_dat$Total_area[summary_dat$Forest == "Shrub WUI"] <- ((numcells * prod(res(shrub_mask)))/10000) * ha_to_acres
+  datum <- mask(shrub_mask, wui_crop, inverse=T)
+  numcells <- sum(!is.na(values(datum)), na.rm=T)
+  summary_dat$Total_area[summary_dat$Forest == "Shrub non-WUI"] <- ((numcells * prod(res(shrub_mask)))/10000) * ha_to_acres
+  rm(datum)
+  invisible(gc())
+  
+  #----- Area in surplus and deficit -----------------------------------------#
+  surplus <- terra::ifel(all_def > 0, 1, NA)
+  surp <- terra::mask(surplus, wui_crop)
+  numcells <- sum(values(surp), na.rm=T)
+  summary_dat$Surplus_area[summary_dat$Forest == "Shrub WUI"] <- ((numcells * prod(res(shrub_mask)))/10000) * ha_to_acres
+  surp <- terra::mask(surplus, wui_crop, inverse = T)
+  numcells <- sum(values(surp), na.rm=T)
+  summary_dat$Surplus_area[summary_dat$Forest == "Shrub non-WUI"] <- ((numcells * prod(res(shrub_mask)))/10000) * ha_to_acres
+  
+  rm(surplus, surp)
+  invisible(gc())
+  
+  deficit <- terra::ifel(all_def < 0, 1, NA)
+  defr <- terra::mask(deficit, wui_crop)
+  numcells <- sum(values(defr), na.rm=T)
+  summary_dat$Deficit_area[summary_dat$Forest == "Shrub WUI"] <- ((numcells * prod(res(shrub_mask)))/10000) * ha_to_acres
+  defr <- terra::mask(deficit, wui_crop, inverse = T)
+  numcells <- sum(values(defr), na.rm=T)
+  summary_dat$Deficit_area[summary_dat$Forest == "Shrub non-WUI"] <- ((numcells * prod(res(shrub_mask)))/10000) * ha_to_acres
+  rm(deficit, defr)
+  invisible(gc())
+  
+  #----- Mean and sd of deficit ----------------------------------------------#
+  defr <- terra::mask(all_def, wui_crop)
+  summary_dat$mean_deficit[summary_dat$Forest == "Shrub WUI"] <- mean(values(defr), na.rm=T)
+  summary_dat$sd_deficit  [summary_dat$Forest == "Shrub WUI"] <- sd(values(defr), na.rm=T)
+  
+  defr <- terra::mask(all_def, wui_crop, inverse=T)
+  summary_dat$mean_deficit[summary_dat$Forest == "Shrub non-WUI"] <- mean(values(defr), na.rm=T)
+  summary_dat$sd_deficit  [summary_dat$Forest == "Shrub non-WUI"] <- sd(values(defr), na.rm=T)
+  
+  rm(shrub_mask, vv, all_def, defr)
   invisible(gc())
   #---------------------------------------------------------------------------#
   
@@ -500,6 +649,10 @@ rm(spark, all_sparks)
 #| eval: false
 
 summary_dat <- read.csv("SPARK stats.csv")
+
+#----- Take out WUI ----------------------------------------------------------#
+x <- grep("WUI", summary_dat$Forest)
+summary_dat <- summary_dat[-x,]
 
 #----- A nice graph showing all the regions ----------------------------------#
 summary_dat$def_lower <- summary_dat$mean_deficit - summary_dat$sd_deficit
@@ -649,6 +802,9 @@ write.csv(summary_table_dat, "State stats.csv", row.names=F)
 #| eval: false
 
 summary_dat <- read.csv("State stats.csv")
+#----- Take out WUI ----------------------------------------------------------#
+x <- grep("WUI", summary_dat$Forest)
+summary_dat <- summary_dat[-x,]
 
 #----- A nice graph showing all the regions ----------------------------------#
 summary_dat$def_lower <- summary_dat$mean_deficit - summary_dat$sd_deficit
@@ -836,9 +992,29 @@ print(knitr::kable(summary_dat, col.names = c("Vegetation type", "Total area (ac
 
 ![](figs/Wyoming3.png)
 
-# WUI
+# Wildland-Urban Interface
+
+WUI data was downloaded from [https://silvis.forest.wisc.edu/maps-data/wildland-urban-interface/]( https://silvis.forest.wisc.edu/maps-data/wildland-urban-interface/). 
+
+There are several possible ways to define the WUI. I am using the product derived from building footprints, at the finest available resolution (100 m).
 
 
+```{r rasterize-wui}
+#| eval: false
+
+#----- Rasterize the WUI -----------------------------------------------------#
+fri <- terra::rast("../temp_rasters/all_fri_vals.tif")
+
+#----- Load WUI --------------------------------------------------------------#
+wui <- terra::vect("Z:/project_data/western_fire/wui/CONUS_WUI_structures_MSBFP.gdb", layer="CONUS_wui_poly_final_100")
+wui <- terra::project(wui, fri)
+wui <- terra::crop(wui, fri)
+
+rast <- terra::rast(fri)
+
+wui_rast <- rasterize(wui, rast, fun="count", background = NA)
+writeRaster(wui_rast, "../temp_rasters/wui.tif")
+```
 
 # Recent burns 
 
