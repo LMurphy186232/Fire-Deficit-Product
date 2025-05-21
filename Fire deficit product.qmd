@@ -1059,7 +1059,7 @@ Fire return interval data is from [Landfire](https://landfire.gov/fire-regime/fr
 #| eval: FALSE
 
 #----- Load the BPS raster ---------------------------------------------------#
-fri <- terra::rast("Z:/project_data/landfire data/LF2016_FRI_200_CONUS/Tif/LC16_FRI_200.tif")
+fri <- terra::rast("Z:/project_data/landfire data/Fire return interval/LF2016_FRI_200_CONUS/Tif/LC16_FRI_200.tif")
 fri_crs <- crs(fri)
 
 #-----------------------------------------------------------------------------#
@@ -1097,7 +1097,7 @@ gc()
 fri <- terra::rast("../temp_rasters/fri_crop.tif")
 
 #----- Get the CSV data that has fire return interval for all BPS codes ------#
-bps <- read.csv("Z:/project_data/landfire data/LF2016_FRI_200_CONUS/CSV_Data/LF16_FRI_200.csv")
+bps <- read.csv("Z:/project_data/landfire data/fire return interval/LF2016_FRI_200_CONUS/CSV_Data/LF16_FRI_200.csv")
 
 #----- NA out unavailable FRIs -----------------------------------------------#
 good_bps <- which(bps$FRI_ALLFIR > 0) 
@@ -1150,7 +1150,7 @@ No locations in Alaska have a FRI $\leq$ 40 years. No further products will be c
 
 
 #----- Get the CSV data that has fire return interval for all BPS codes ------#
-bps <- read.csv("Z:/project_data/landfire data/LF2016_FRI_200_CONUS/CSV_Data/LF16_FRI_200.csv")
+bps <- read.csv("Z:/project_data/landfire data/fire return interval/LF2016_FRI_200_CONUS/CSV_Data/LF16_FRI_200.csv")
 
 #----- Filter out those units with an all-fire FRI <= 40 years ---------------#
 good_bps <- which(bps$FRI_ALLFIR > 0 & bps$FRI_ALLFIR <= 40) 
@@ -1204,13 +1204,13 @@ writeRaster(mosaic, "../west_us_FRI.tif", overwrite = TRUE)
 #----- Alaska ----------------------------------------------------------------#
 
 #----- Get the CSV data that has fire return interval for all BPS codes ------#
-ak_bps <- read.csv("Z:/project_data/landfire data/LF2023_FRI_240_AK/CSV_Data/LF23_FRI_240.csv")
+ak_bps <- read.csv("Z:/project_data/landfire data/fire return interval/LF2023_FRI_240_AK/CSV_Data/LF23_FRI_240.csv")
 
 #----- Filter out those units with an all-fire FRI <= 40 years ---------------#
 #bps <- bps[bps$FRI_ALLFIR <= 40 & bps$FRI_ALLFIR > 0,]
 bad_bps <- which(ak_bps$FRI_ALLFIR > 40 | ak_bps$FRI_ALLFIR < 0)
 
-akfri <- terra::rast("Z:/project_data/landfire data/LF2023_FRI_240_AK/Tif/LA23_FRI_240.tif")
+akfri <- terra::rast("Z:/project_data/landfire data/fire return intervan/LF2023_FRI_240_AK/Tif/LA23_FRI_240.tif")
 ```
 
 ```{r}
@@ -1299,7 +1299,7 @@ We originally used a definition of forest that was the intersection between Land
 #| eval: FALSE
 
 #----- Load the BPS raster ---------------------------------------------------#
-evc <- terra::rast("Z:/project_data/landfire data/LF2016_EVC_200_CONUS/Tif/LC16_EVC_200.tif")
+evc <- terra::rast("Z:/project_data/landfire data/vegetation/existing vegetation cover/LF2016_EVC_200_CONUS/Tif/LC16_EVC_200.tif")
 study_domain <- terra::rast("../temp_rasters/study_domain.tif")
 
 #----- Crop and mask study domain --------------------------------------------#
@@ -1318,7 +1318,7 @@ gc()
 ```{r create-evc-western-us-forest-rast}
 #| eval: FALSE
 #----- Get the CSV data with vegetation codes --------------------------------#
-evc_codes <- read.csv("Z:/project_data/landfire data/LF2016_EVC_200_CONUS/CSV_Data/LF16_EVC_200.csv")
+evc_codes <- read.csv("Z:/project_data/landfire data/vegetation/existing vegetation cover/LF2016_EVC_200_CONUS/CSV_Data/LF16_EVC_200.csv")
 
 #-----------------------------------------------------------------------------#
 # Make a forest cover mask for EVC
@@ -1372,7 +1372,7 @@ Our identified forest regions can be subdivided by fire regime as follows:
 #| eval: FALSE
 
 #----- Load the BPS raster ---------------------------------------------------#
-frg <- terra::rast("Z:/project_data/landfire data/LF2016_FRG_200_CONUS/Tif/LC16_FRG_200.tif")
+frg <- terra::rast("Z:/project_data/landfire data/fire regime/LF2016_FRG_200_CONUS/Tif/LC16_FRG_200.tif")
 study_domain <- terra::rast("../temp_rasters/study_domain.tif")
 
 #----- Crop and mask to study domain -----------------------------------------#
@@ -1400,7 +1400,7 @@ gc()
 #-----------------------------------------------------------------------------#
 
 #----- Get the CSV data that has fire return interval for all BPS codes ------#
-bps <- read.csv("Z:/project_data/landfire data/LF2016_FRG_200_CONUS/CSV_Data/LF16_FRG_200.csv")
+bps <- read.csv("Z:/project_data/landfire data/fire regime/LF2016_FRG_200_CONUS/CSV_Data/LF16_FRG_200.csv")
 
 frg_groups <- data.frame(frg = c("I-A", "I-B", "I-C", "III-A", "III-B",
                                  "IV-A", "IV-B", "V-A", "V-B"),
@@ -1488,7 +1488,7 @@ There are herb cover classes \< 20%, but this appears to indicate a pixel that i
 ```{r create-evc-grass-rast}
 #| eval: FALSE
 #----- Get the CSV data with vegetation codes --------------------------------#
-evc_codes <- read.csv("Z:/project_data/landfire data/LF2016_EVC_200_CONUS/CSV_Data/LF16_EVC_200.csv")
+evc_codes <- read.csv("Z:/project_data/landfire data/vegetation/existing vegetation cover/LF2016_EVC_200_CONUS/CSV_Data/LF16_EVC_200.csv")
 
 #----- Filter cover to grass cover types -------------------------------------#
 good_codes <- which(evc_codes$VALUE %in% c(
@@ -1608,7 +1608,7 @@ There are shrub cover classes \< 20%, but this appears to indicate a pixel that 
 ```{r create-evc-shrub-rast}
 #| eval: FALSE
 #----- Get the CSV data with vegetation codes --------------------------------#
-evc_codes <- read.csv("Z:/project_data/landfire data/LF2016_EVC_200_CONUS/CSV_Data/LF16_EVC_200.csv")
+evc_codes <- read.csv("Z:/project_data/landfire data/vegetation/existing vegetation cover/LF2016_EVC_200_CONUS/CSV_Data/LF16_EVC_200.csv")
 
 #----- Filter cover to grass cover types -------------------------------------#
 good_codes <- which(evc_codes$VALUE %in% c(
@@ -1757,7 +1757,7 @@ All areas with FRI > 40 years, ignoring vegetation type:
 ```{r create-western-us-longfri-rast}
 #| eval: FALSE
 #----- Get the CSV data that has fire return interval for all BPS codes ------#
-bps <- read.csv("Z:/project_data/landfire data/LF2016_FRI_200_CONUS/CSV_Data/LF16_FRI_200.csv")
+bps <- read.csv("Z:/project_data/landfire data/fire regime/LF2016_FRI_200_CONUS/CSV_Data/LF16_FRI_200.csv")
 
 #----- Filter out those units with an all-fire FRI <= 40 years ---------------#
 good_bps <- which(bps$FRI_ALLFIR > 40) 
@@ -2312,7 +2312,7 @@ Lifeform cover was derived from LFTreeCov, LFShrubCov, and LFHerbCov fields in t
 ### Complete cover class listing for LANDFIRE
 
 ```{r}
-evc_codes <- read.csv("Z:/project_data/landfire data/LF2016_EVC_200_CONUS/CSV_Data/LF16_EVC_200.csv")
+evc_codes <- read.csv("Z:/project_data/landfire data/vegetation/existing vegetation cover/LF2016_EVC_200_CONUS/CSV_Data/LF16_EVC_200.csv")
 knitr::kable(evc_codes[,1:2])
 ```
 
@@ -2493,7 +2493,7 @@ This implies that our definition of "forest" is quite a bit stricter than the on
 ```{r create-looser-evc-forest-rast}
 #| eval: FALSE
 #----- Get the CSV data with vegetation codes --------------------------------#
-evc_codes <- read.csv("Z:/project_data/landfire data/LF2016_EVC_200_CONUS/CSV_Data/LF16_EVC_200.csv")
+evc_codes <- read.csv("Z:/project_data/landfire data/vegetation/existing vegetation cover/LF2016_EVC_200_CONUS/CSV_Data/LF16_EVC_200.csv")
 
 #----- Filter forest cover ---------------------------------------------------#
 good_codes <- grep("Forest", evc_codes$CLASSNAMES)
@@ -2647,7 +2647,7 @@ We eventually determined that LCMS did a pretty bad job of differentiating betwe
 #-----------------------------------------------------------------------------#
 
 #----- Load the BPS raster ---------------------------------------------------#
-fri <- terra::rast("Z:/project_data/landfire data/LF2016_FRI_200_CONUS/Tif/LC16_FRI_200.tif")
+fri <- terra::rast("Z:/project_data/landfire data/fire regime/LF2016_FRI_200_CONUS/Tif/LC16_FRI_200.tif")
 
 #----- Crop to bounding box of Western US ------------------------------------#
 # This is for WFFRC so split along line of 100 degrees west longitude
