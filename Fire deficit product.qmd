@@ -783,7 +783,8 @@ print(knitr::kable(summary_dat, col.names = c("Vegetation type", "Total area (ac
 all_states <- unique(states$NAME)
 
 # Remove state slivers
-all_states <- all_states[which(!all_states %in% c("North Dakota", "Texas", 
+all_states <- all_states[which(!all_states %in% c("North Dakota", "Texas",
+                                                  "Kansas", "Oklahoma",
                                                   "South Dakota", "Nebraska"))]
 
 summary_table_dat <- NULL
@@ -812,10 +813,9 @@ summary_dat$def_upper <- summary_dat$mean_deficit + summary_dat$sd_deficit
 
 # Make short display names
 state_names <- c("Arizona" = "AZ", "California" = "CA", "Colorado" = "CO",
-                 "Idaho" = "ID", "Kansas" = "KS", "Montana" = "MT",
-                 "New Mexico" = "NM", "Nevada" = "NV", "Oklahoma" = "OK",
-                 "Oregon" = "OR", "Utah" = "UT", "Washington" = "WA",
-                 "Wyoming" = "WY")
+                 "Idaho" = "ID", "Montana" = "MT", "New Mexico" = "NM", 
+                 "Nevada" = "NV", "Oregon" = "OR", "Utah" = "UT", 
+                 "Washington" = "WA", "Wyoming" = "WY")
 summary_dat$State <- NA
 ind <- match(summary_dat$Region, names(state_names))
 summary_dat$State <- state_names[ind]
@@ -917,13 +917,6 @@ print(knitr::kable(summary_dat, col.names = c("Vegetation type", "Total area (ac
 
 ![](figs/Idaho3.png)
 
-## Kansas
-
-![](figs/Kansas1.png)
-
-![](figs/Kansas2.png)
-
-![](figs/Kansas3.png)
 
 ## Montana
 
@@ -950,14 +943,6 @@ print(knitr::kable(summary_dat, col.names = c("Vegetation type", "Total area (ac
 
 ![](figs/Nevada3.png)
 
-
-## Oklahoma
-
-![](figs/Oklahoma1.png)
-
-![](figs/Oklahoma2.png)
-
-![](figs/Oklahoma3.png)
 
 ## Oregon
 
@@ -1016,11 +1001,11 @@ wui_rast <- rasterize(wui, rast, fun="count", background = NA)
 writeRaster(wui_rast, "../temp_rasters/wui.tif")
 ```
 
-# Recent burns 
+# Recent burns - not deliberate
 
 In order to calculate fire deficit / surplus, we need the the best possible record of recent fires. We are using the WUMI dataset created by Park Williams and compiled by Tyler McIntosh. This dataset can be downloaded from the WFFRC Cyverse folder.
 
-We use this dataset by turning it into a raster of times each pixel has burned.
+We use this dataset by turning it into a raster of times each pixel has burned. I investigated whether the rasterization process could be expected to change the fire area estimate due to the rasterization algorithm, but the 30 m resolution is so much smaller than the size of fire polygons that it should not matter. (I just looked visually. I didn't prove this with math, but I could.)
 
 **Output:** raster "num_fires.tif"
 
@@ -1050,6 +1035,71 @@ r_count <- rasterize(fire_perimeters, num_burns, fun="count", background = 0)
 writeRaster(r_count, "../temp_rasters/num_fires.tif")
 ```
 
+# Prescribed burns
+
+This dataset was created by Tyler McIntosh, who notes:
+
+> This dataset is derived from the [https://reshapewildfire.org/resources/twig-data-resources](ReShape TWIG dataset), which is essentially a more comprehensive version of the NFPORS + FACTS integration that I performed. It was just recently released by SWERI.
+
+> The derived dataset linked above contains polygon information on intentional ignitions across the western US states. I've filtered it to only include those that were actually completed, I have removed duplicated events, and filtered to those which either marked as intentional ignitions in the TWIG classification OR which are listed as type "Hand Pile Burn", "Machine Pile Burn", "Broadcast Burn", or "Jackpot Burn". All polygon geometries have been validated.
+
+> There is one caveat to this dataset, the fix for which was running when my laptop gave up on life. There are some cases where there are multiple polygons for the same treatment event, but which overlap. An example of this would be hand pile burning near park service structures to create defensible space, in which they appear to have created a buffered polygon around points on each structure. Whenever structures are grouped closely, you end up with many polygons that overlap. If areas from the polygons are pulled naively, it inflates the area treated. The solution is to merge the polygons that occurred on the same date and with the same treatment IDs across the entire dataset, but this has NOT been applied to this version of the gpkg. So just be aware that it is possible to have multiple overlapping polygons in a single year at a single location.
+
+> I think that this dataset is quite defensible as 'best-easily-available' for your current use. If Winslow wanted an 'absolutely best possible' version at some point in the future there are some additional datasets that could be brought in, but that would require more cross-validation, checking for duplicates, and confirming classification matches across treatment types. If we wanted to go that route in the future I think we would want to loop in Kristin Brazunias up at UW, as she has been working on a workflow to integrate these additional treatment datasets (but at a local scale) for another project I'm semi-involved with.
+
+So I will do the polygon merge mentioned, and rasterize the dataset to create a number of prescribed burns per pixel raster. The total merged area in the west is 9,429 ha less than the unmerged; which is the amount we would have overestimated.
+
+```{r prescribed-burns-processing}
+#| eval: FALSE
+
+fri <- terra::rast("../temp_rasters/all_fri_vals.tif")
+
+#----- Load prescribed burns, crop, project ----------------------------------#
+rx <- terra::vect("Z:/project_data/western_fire/prescribed burns/twig_planned_ignition_no_dup_west.gpkg")
+rx <- terra::project(rx, fri)
+rx <- terra::crop(rx, fri)
+
+# Tyler's suggested method:
+# I was using 'name', and the following steps:
+# - turn empty 'name' strings into NAs
+# - filter to only polygons with all of name, actual_completion_date, and type
+# - merge polygons that have matching 'name', 'type', AND 
+#   'actual_completion_date' AND are spatially overlapping one another (not 
+#    just next to each other). Could also require the same activity, method, 
+#    and/or equipment if desired
+# - bind the new merged polygons back to the others
+
+# Since I am rasterizing, I will just make a single burn ID and then 
+# dissolve any polygons with the same burn ID, not really caring if they touch.
+# Once they are a raster, it doesn't matter if they were a multipart polygon.
+
+#----- Turn empty 'name' strings into NAs ------------------------------------#
+rx$name <- ifelse(rx$name %in% c("", " "), NA, rx$name)
+
+#---- Turn NAs back into a count - so they don't look like the same thing ----#
+burn_names <- rx$name
+burn_names <- ifelse(is.na(burn_names), 1:length(burn_names), burn_names)
+
+#----- Combine name, date, and type to make a unique burn ID -----------------#
+# A lot of type codes are missing, not going to worry about that too much.
+rx$unique_burn_id <- as.factor(paste(burn_names, 
+                           rx$actual_completion_date, 
+                           rx$activity_code, sep="-"))
+
+#----- Dissolve polygons with the same burn ID. If they arne't overlapping, --#
+# this shouldn't change anything
+rx2 <- terra::aggregate(rx, by="unique_burn_id")
+
+# For a quick area check - we reduce by 9,420.5 ha
+#areas <- expanse(rx, unit="m")
+#areas2 <- expanse(rx2, unit='m')
+
+rast <- terra::rast(fri)
+
+rx_rast <- rasterize(rx2, rast, fun="count", background = NA)
+writeRaster(rx_rast, "../temp_rasters/num_rx.tif")
+```
+
 
 # Landfire historical fire regime / fire return interval
 
@@ -1068,8 +1118,8 @@ fri_crs <- crs(fri)
 #-----------------------------------------------------------------------------#
 study_domain <- terra::rast("Z:/project_data/western_fire/for_Lora/study_domain.tif")
 
-#----- terra::project to the FRI raster. This will mess up the study domain extent --#
-# But if I don't do this...can't mask later, cells won't match.
+#----- terra::project to the FRI raster. This will mess up the study domain --#
+# extent. But if I don't do this...can't mask later, cells won't match.
 study_domain <- terra::project(study_domain, fri)
 
 #----- Now shrink the study domain back down to reasonable size
@@ -1236,13 +1286,16 @@ plot(states, add=T, fill=NULL)
 
 **Output:** raster called "western_us_fire_deficit.tif". The value in each raster is the deficit or surplus. Values above zero are surplus, and represent the number of times more an area has burned than it should have (i.e. a value of 2 means the area has burned twice as many times as expected). Values below zero are deficit, and are interpretable in the same way (-2 means the area should have burned twice as much as it did).
 
-The number of expected fires $N_{exp}$ in the 40 years of our burn data is $40/FRI$, and call $N_{act}$ the number of observed fires from the dataset. For surpluses, we take $N_{act}/N_{exp}$; for deficits, we take the inverse of that, and add a negative. (If an area has not burned ($N_{act}=0$), deficit will be equal to negative expected fires.)
+The number of expected fires $N_{exp}$ in the 40 years of our burn data is $40/FRI$, and call $N_{act}$ the number of observed fires from the dataset (wild plus prescribed burns). For surpluses, we take $N_{act}/N_{exp}$; for deficits, we take the inverse of that, and add a negative. (If an area has not burned ($N_{act}=0$), deficit will be equal to negative expected fires.)
+
+For comparison, there is a separate raster called "western_us_fire_deficit_norx.tif" that does not contain prescribed burns.
 
 ```{r create-fire-deficit-raster}
 #| eval: false
 
-#----- Actual number of fires ------------------------------------------------#
-n_act <- terra::rast("../temp_rasters/num_fires.tif")
+#----- Actual number of fires - wild plus prescribed -------------------------#
+n_act <- terra::rast("../temp_rasters/num_fires.tif") +
+         terra::rast("../temp_rasters/num_rx.tif")
 
 #----- Expected number of fires ----------------------------------------------#
 fri <- terra::rast("../west_us_FRI.tif")
@@ -1805,7 +1858,8 @@ eco <- terra::vect("../Data/level_3_ecoregion/eco_region.shp")
 states <- terra::vect("../Data/s_05mr24.shp")
 
 fri <- terra::rast("../west_us_long_FRI.tif")
-num_fires <- terra::rast("../temp_rasters/num_fires.tif")
+num_fires <- terra::rast("../temp_rasters/num_fires.tif") +
+             terra::rast("../temp_rasters/num_rx.tif")
 
 eco <- terra::project(eco, fri)
 states <- terra::project(states, fri)
@@ -2098,8 +2152,6 @@ eco <- terra::vect("../Data/level_3_ecoregion/eco_region.shp")
 states <- terra::vect("../Data/s_05mr24.shp")
 
 fri <- terra::rast("../west_us_long_FRI.tif")
-num_fires <- terra::rast("../temp_rasters/num_fires.tif")
-
 eco <- terra::project(eco, fri)
 states <- terra::project(states, fri)
 states <- terra::crop(states, fri)
@@ -2203,7 +2255,6 @@ terra::writeVector(eco, "../temp_rasters/ecoregions_with_deficit.shp", overwrite
 def_rast <- rast(fri)
 allvegrast <- rasterize(eco, def_rast, field = "allveg_def", touches = TRUE)
 terra::writeRaster(allvegrast, "../temp_rasters/eco_all_veg_def.tif", overwrite=T)
-rm(rasterized)
 
 forestrast <- rasterize(eco, def_rast, field = "forest_def", touches = TRUE)
 terra::writeRaster(forestrast, "../temp_rasters/eco_forest_def.tif", overwrite=T)
