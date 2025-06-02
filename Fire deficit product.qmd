@@ -673,28 +673,55 @@ summary_dat$SPARK[x] <- "WA Klickitat Co"
 x <- which(summary_dat$Region == "WY - Upper Colorado Basin, Green River")
 summary_dat$SPARK[x] <- "WY Colorado/Green"
 
+#----- A plot with no restriction on Y axis ----------------------------------#
 suppressMessages(region_plot <- 
   ggplot(summary_dat, aes(x = SPARK, y = mean_deficit, color = Forest)) +
   geom_point(position = position_dodge(width = 0.5), size = 3) +
-  geom_errorbar(
+  geom_linerange(
     aes(ymin = def_lower, ymax = def_upper),
-    position = position_dodge(width = 0.5),
-    width = 0.2
+    position = position_dodge(width = 0.5)#,
+    #width = 0.2
   ) +
   geom_hline(yintercept = 0) +
-  ylim(c(min(summary_dat$def_lower) - 0.5, 10)) +
+  labs(
+    title = "Mean deficit by SPARK (negative values = deficit)",
+    x = "",
+    y = "Fire deficit (bars show sd)",
+    color = NULL
+    #caption = "Two shrubs omitted for readability"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom"))
+ggsave("figs/spark_summary_unzoomed.png", region_plot, width=8.25)
+
+#----- A plot zoomed in, to show more central points -------------------------#
+xmin = -10
+xmax = 60
+summary_dat$def_lower2 <- pmax(summary_dat$def_lower, xmin)
+summary_dat$def_upper2 <- pmin(summary_dat$def_upper, xmax)
+suppressMessages(region_plot <- 
+  ggplot(summary_dat, aes(x = SPARK, y = mean_deficit, color = Forest)) +
+  geom_point(position = position_dodge(width = 0.5), size = 3) +
+  geom_linerange(
+    aes(ymin = def_lower2, ymax = def_upper2),
+    position = position_dodge(width = 0.5)#,
+    #width = 0.2
+  ) +
+  geom_hline(yintercept = 0) +
+  ylim(c(xmin, xmax)) +
   labs(
     title = "Mean deficit by SPARK (negative values = deficit)",
     x = "",
     y = "Fire deficit (bars show sd)",
     color = NULL,
-    caption = "Two shrubs omitted for readability"
+    caption = "Zoomed in for readability, some points omitted"
   ) +
   theme_minimal() +
   theme(legend.position = "bottom"))
 ggsave("figs/spark_summary.png", region_plot, width=8.25)
 ```
 
+![](figs/spark_summary_unzoomed.png)
 ![](figs/spark_summary.png)
 
 ```{r}
@@ -765,7 +792,7 @@ print(knitr::kable(summary_dat, col.names = c("Vegetation type", "Total area (ac
 
 ![](figs/WY - Upper Colorado Basin, Green River2.png)
 
-![](figs/WY - Upper Colorado Basin, Green River4.png)
+![](figs/WY - Upper Colorado Basin, Green River3.png)
 
 ## AZ - Coconino County/Flagstaff Region
 
@@ -839,7 +866,7 @@ suppressMessages(region_plot <-
   ) +
   theme_minimal() +
   theme(legend.position = "bottom"))
-#ggsave("figs/state_summary.png", region_plot, width=8.25)
+ggsave("figs/state_summary.png", region_plot, width=8.25)
 ```
 
 ![](figs/state_summary.png)
