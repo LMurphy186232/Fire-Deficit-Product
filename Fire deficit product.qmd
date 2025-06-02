@@ -1830,7 +1830,7 @@ $$FRP = \frac{t}{\sum a_i / A} $$
 
 where *t* is the time period evaluated, $a_i$ is annual area burned in year *i*, and *A* is the size of the study area.
 
-This is the contemporary FRP. We can take the mean ecoregion FRI as the historical value. Ecoregion-level deficit / surplus will thus be contemporary divided by historical if contemporary is greater (surplus), or negative historical divided by contemporary if historical is greater (deficit). This makes the number interpretable in the same way as calculated for more frequent fire areas.
+This is the contemporary FRP. We can take the mean ecoregion FRI as the historical value. Ecoregion-level deficit / surplus will thus be contemporary divided by historical if contemporary is greater (deficit), or negative historical divided by contemporary if historical is greater (surplus). This makes the number interpretable in the same way as calculated for more frequent fire areas.
 
 **Need a double check here to make sure I've understood this right:** When considering the area *A* and the burned areas $a_i$, I am only considering pixels within the subsetted areas: within the ecoregion, within those areas where FRI \> 40 years, within the vegetation type in question. Same when calculating mean FRI.
 
@@ -2069,7 +2069,7 @@ dat <- all_veg_dat %>% group_by(Name) %>%
   mutate(FRP = if_else(Burned > 0, hist_time/(Burned/Area), NA)) %>%
   mutate(Mean_FRI = FRI_Total / Area) %>%
   #mutate(Deficit =  (FRP / Mean_FRI) - 1) %>%
-  mutate(Deficit = ifelse (FRP > Mean_FRI, FRP / Mean_FRI, -1 * Mean_FRI / FRP)) %>%
+  mutate(Deficit = ifelse (FRP > Mean_FRI, -1 * FRP / Mean_FRI, Mean_FRI / FRP)) %>%
   mutate(Area = (Area * prod(res(fri)))/10000,
          Burned = (Burned * prod(res(fri)))/10000) %>%
   select(-FRI_Total)
@@ -2098,7 +2098,7 @@ dat <- forest_dat %>% group_by(Name) %>%
   mutate(FRP = if_else(Burned > 0, hist_time/(Burned/Area), NA)) %>%
   mutate(Mean_FRI = FRI_Total / Area) %>%
   #mutate(Deficit =  (FRP / Mean_FRI) - 1) %>%
-  mutate(Deficit = ifelse (FRP > Mean_FRI, FRP / Mean_FRI, -1 * Mean_FRI / FRP)) %>%
+  mutate(Deficit = ifelse (FRP > Mean_FRI, -1 * FRP / Mean_FRI, Mean_FRI / FRP)) %>%
   mutate(Area = (Area * prod(res(fri)))/10000,
          Burned = (Burned * prod(res(fri)))/10000) %>%
   select(-FRI_Total)
@@ -2126,7 +2126,7 @@ dat <- grass_dat %>% group_by(Name) %>%
   mutate(FRP = if_else(Burned > 0, hist_time/(Burned/Area), NA)) %>%
   mutate(Mean_FRI = FRI_Total / Area) %>%
   #mutate(Deficit =  (FRP / Mean_FRI) - 1) %>%
-  mutate(Deficit = ifelse (FRP > Mean_FRI, FRP / Mean_FRI, -1 * Mean_FRI / FRP)) %>%
+  mutate(Deficit = ifelse (FRP > Mean_FRI, -1 * FRP / Mean_FRI, Mean_FRI / FRP)) %>%
   mutate(Area = (Area * prod(res(fri)))/10000,
          Burned = (Burned * prod(res(fri)))/10000) %>%
   select(-FRI_Total)
@@ -2154,7 +2154,7 @@ dat <- shrub_dat %>% group_by(Name) %>%
   mutate(FRP = if_else(Burned > 0, hist_time/(Burned/Area), NA)) %>%
   mutate(Mean_FRI = FRI_Total / Area) %>%
   #mutate(Deficit =  (FRP / Mean_FRI) - 1) %>%
-  mutate(Deficit = ifelse (FRP > Mean_FRI, FRP / Mean_FRI, -1 * Mean_FRI / FRP)) %>%
+  mutate(Deficit = ifelse (FRP > Mean_FRI, -1 * FRP / Mean_FRI, Mean_FRI / FRP)) %>%
   mutate(Area = (Area * prod(res(fri)))/10000,
          Burned = (Burned * prod(res(fri)))/10000) %>%
   select(-FRI_Total)
