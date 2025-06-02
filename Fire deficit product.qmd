@@ -28,7 +28,9 @@ terraOptions(tempdir="D:/workspace/Lora/temp") # Terminator
 
 # SPARKs
 
-We want summary statistics on fire deficit for SPARK watershed regions. To produce these statistics, I used rasterized values of fire deficit where possible, in frequent fire areas. Areas in less-frequent fire areas (FRI > 40) received the value of the ecoregion-level deficit. There are different ecoregion-level deficit values for forest, grasslands, and shrublands (see later in this document for details) and the appropriate value was used for each vegetation type.
+We want summary statistics on fire deficit for SPARK watershed regions. To produce these statistics, I used rasterized values of fire deficit where possible, in frequent fire areas. Fire deficit calculations are based on total fires, *including prescribed burns*.
+
+Areas in less-frequent fire areas (FRI > 40) received the value of the ecoregion-level deficit in each pixel. There are different ecoregion-level deficit values for forest, grasslands, and shrublands (see later in this document for details) and the appropriate value was used for each vegetation type. Stats are calculated by aggregating over all the raster pixels in a SPARK, which has the effect of weighting means by area when including the ecoregion-level values.
 
 ```{r regions-prep}
 #| eval: false
@@ -684,7 +686,7 @@ suppressMessages(region_plot <-
   ) +
   geom_hline(yintercept = 0) +
   labs(
-    title = "Mean deficit by SPARK (negative values = deficit)",
+    title = "Mean+sd deficit by SPARK (negative values = deficit)",
     x = "",
     y = "Fire deficit (bars show sd)",
     color = NULL
@@ -695,8 +697,8 @@ suppressMessages(region_plot <-
 ggsave("figs/spark_summary_unzoomed.png", region_plot, width=8.25)
 
 #----- A plot zoomed in, to show more central points -------------------------#
-xmin = -10
-xmax = 60
+xmin = -5
+xmax = 20
 summary_dat$def_lower2 <- pmax(summary_dat$def_lower, xmin)
 summary_dat$def_upper2 <- pmin(summary_dat$def_upper, xmax)
 suppressMessages(region_plot <- 
@@ -710,7 +712,7 @@ suppressMessages(region_plot <-
   geom_hline(yintercept = 0) +
   ylim(c(xmin, xmax)) +
   labs(
-    title = "Mean deficit by SPARK (negative values = deficit)",
+    title = "Zoomed in: mean+sd deficit by SPARK (negative values = deficit)",
     x = "",
     y = "Fire deficit (bars show sd)",
     color = NULL,
@@ -1123,8 +1125,8 @@ rx2 <- terra::aggregate(rx, by="unique_burn_id")
 
 rast <- terra::rast(fri)
 
-rx_rast <- rasterize(rx2, rast, fun="count", background = NA)
-writeRaster(rx_rast, "../temp_rasters/num_rx.tif")
+rx_rast <- rasterize(rx2, rast, fun="count", background = 0)
+writeRaster(rx_rast, "../temp_rasters/num_rx.tif", overwrite = T)
 ```
 
 
