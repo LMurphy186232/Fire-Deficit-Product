@@ -697,8 +697,8 @@ suppressMessages(region_plot <-
 ggsave("figs/spark_summary_unzoomed.png", region_plot, width=8.25)
 
 #----- A plot zoomed in, to show more central points -------------------------#
-xmin = -5
-xmax = 20
+xmin = -10
+xmax = 5
 summary_dat$def_lower2 <- pmax(summary_dat$def_lower, xmin)
 summary_dat$def_upper2 <- pmin(summary_dat$def_upper, xmax)
 suppressMessages(region_plot <- 
@@ -2208,7 +2208,7 @@ dat <- all_veg_dat %>% group_by(Name) %>%
   filter(Area > 0) %>%
   mutate(FRP = if_else(Burned > 0, hist_time/(Burned/Area), NA)) %>%
   mutate(Mean_FRI = FRI_Total / Area) %>%
-  mutate(Deficit = ifelse (FRP > Mean_FRI, FRP / Mean_FRI, -1 * Mean_FRI / FRP)) %>%
+  mutate(Deficit = ifelse (FRP > Mean_FRI, -1 * FRP / Mean_FRI, Mean_FRI / FRP)) %>%
   mutate(Area = (Area * prod(res(fri)))/10000,
          Burned = (Burned * prod(res(fri)))/10000) %>%
   select(-FRI_Total)
@@ -2227,7 +2227,7 @@ dat <- forest_dat %>% group_by(Name) %>%
   filter(Area > 0) %>%
   mutate(FRP = if_else(Burned > 0, hist_time/(Burned/Area), NA)) %>%
   mutate(Mean_FRI = FRI_Total / Area) %>%
-  mutate(Deficit = ifelse (FRP > Mean_FRI, FRP / Mean_FRI, -1 * Mean_FRI / FRP)) %>%
+  mutate(Deficit = ifelse (FRP > Mean_FRI, -1 * FRP / Mean_FRI, Mean_FRI / FRP)) %>%
   mutate(Area = (Area * prod(res(fri)))/10000,
          Burned = (Burned * prod(res(fri)))/10000) %>%
   select(-FRI_Total)
@@ -2246,7 +2246,7 @@ dat <- grass_dat %>% group_by(Name) %>%
   filter(Area > 0) %>%
   mutate(FRP = if_else(Burned > 0, hist_time/(Burned/Area), NA)) %>%
   mutate(Mean_FRI = FRI_Total / Area) %>%
-  mutate(Deficit = ifelse (FRP > Mean_FRI, FRP / Mean_FRI, -1 * Mean_FRI / FRP)) %>%
+  mutate(Deficit = ifelse (FRP > Mean_FRI, -1 * FRP / Mean_FRI, Mean_FRI / FRP)) %>%
   mutate(Area = (Area * prod(res(fri)))/10000,
          Burned = (Burned * prod(res(fri)))/10000) %>%
   select(-FRI_Total)
@@ -2265,7 +2265,7 @@ dat <- shrub_dat %>% group_by(Name) %>%
   filter(Area > 0) %>%
   mutate(FRP = if_else(Burned > 0, hist_time/(Burned/Area), NA)) %>%
   mutate(Mean_FRI = FRI_Total / Area) %>%
-  mutate(Deficit = ifelse (FRP > Mean_FRI, FRP / Mean_FRI, -1 * Mean_FRI / FRP)) %>%
+  mutate(Deficit = ifelse (FRP > Mean_FRI, -1 * FRP / Mean_FRI, Mean_FRI / FRP)) %>%
   mutate(Area = (Area * prod(res(fri)))/10000,
          Burned = (Burned * prod(res(fri)))/10000) %>%
   select(-FRI_Total)
