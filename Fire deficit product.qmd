@@ -774,6 +774,7 @@ print(knitr::kable(summary_dat, col.names = c("Vegetation type", "Total area (ac
 ![](figs/WA - Klickitat County2.png)
 
 ![](figs/WA - Klickitat County3.png)
+
 ## CA - Santa Barbara County
 
 ![](figs/CA - Santa Barbara County1.png)
