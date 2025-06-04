@@ -851,26 +851,52 @@ ind <- match(summary_dat$Region, names(state_names))
 summary_dat$State <- state_names[ind]
 
 suppressMessages(region_plot <- 
-  ggplot(summary_dat, aes(x = State, y = mean_deficit, color = Forest)) +
-  geom_point(position = position_dodge(width = 0.5), size = 3) +
-  geom_errorbar(
-    aes(ymin = def_lower, ymax = def_upper),
-    position = position_dodge(width = 0.5),
-    width = 0.2
-  ) +
-  geom_hline(yintercept = 0) +
-  ylim(c(-15, 28)) +
-  labs(
-    title = "Mean deficit by state (negative values = deficit)",
-    x = "",
-    y = "Fire deficit (bars show sd)",
-    color = NULL,
-    caption = "Some outliers omitted for readability"
-  ) +
-  theme_minimal() +
-  theme(legend.position = "bottom"))
+                   ggplot(summary_dat, aes(x = State, y = mean_deficit, color = Forest)) +
+                   geom_point(position = position_dodge(width = 0.5), size = 3) +
+                   geom_errorbar(
+                     aes(ymin = def_lower, ymax = def_upper),
+                     position = position_dodge(width = 0.5),
+                     width = 0.2
+                   ) +
+                   geom_hline(yintercept = 0) +
+                   #ylim(c(-15, 28)) +
+                   labs(
+                     title = "Mean deficit by state (negative values = deficit)",
+                     x = "",
+                     y = "Fire deficit (bars show sd)",
+                     color = NULL) +
+                   theme_minimal() +
+                   theme(legend.position = "bottom"))
+ggsave("figs/state_summary_unzoomed.png", region_plot, width=8.25)
+
+#----- A plot zoomed in, to show more central points -------------------------#
+xmin = -10
+xmax = 5
+summary_dat$def_lower2 <- pmax(summary_dat$def_lower, xmin)
+summary_dat$def_upper2 <- pmin(summary_dat$def_upper, xmax)
+suppressMessages(region_plot <- 
+                   ggplot(summary_dat, aes(x = State, y = mean_deficit, color = Forest)) +
+                   geom_point(position = position_dodge(width = 0.5), size = 3) +
+                   geom_linerange(
+                     aes(ymin = def_lower2, ymax = def_upper2),
+                     position = position_dodge(width = 0.5)#,
+                     #width = 0.2
+                   ) +
+                   geom_hline(yintercept = 0) +
+                   ylim(c(xmin, xmax)) +
+                   labs(
+                     title = "Zoomed in: mean+sd deficit by state (negative values = deficit)",
+                     x = "",
+                     y = "Fire deficit (bars show sd)",
+                     color = NULL,
+                     caption = "Zoomed in for readability, some points omitted"
+                   ) +
+                   theme_minimal() +
+                   theme(legend.position = "bottom"))
 ggsave("figs/state_summary.png", region_plot, width=8.25)
 ```
+
+![](figs/state_summary_unzoomed.png)
 
 ![](figs/state_summary.png)
 
