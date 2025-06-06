@@ -33,7 +33,7 @@ We want summary statistics on fire deficit for SPARK watershed regions. To produ
 Areas in less-frequent fire areas (FRI > 40) received the value of the ecoregion-level deficit in each pixel. There are different ecoregion-level deficit values for forest, grasslands, and shrublands (see later in this document for details) and the appropriate value was used for each vegetation type. Stats are calculated by aggregating over all the raster pixels in a SPARK, which has the effect of weighting means by area when including the ecoregion-level values.
 
 ```{r regions-prep}
-#| eval: false
+#| eval: true
 
 #-----------------------------------------------------------------------------#
 # PLEASE NOTE:
@@ -59,7 +59,7 @@ ha_to_acres <- 2.47105
 ```
 
 ```{r do-a-region}
-#| eval: false
+#| eval: true
 
 do_a_region <- function(region_name, region_shape) {
   
@@ -195,7 +195,7 @@ do_a_region <- function(region_name, region_shape) {
   # Forest WUI 
   #---------------------------------------------------------------------------#
   summary_dat <- rbind(summary_dat, 
-                       data.frame(Forest = c("Forest WUI", "Forest non-WUI"),
+                       data.frame(Vegetation = c("Forest WUI", "Forest non-WUI"),
                                   Numcells = 0, Numsurpluscells = 0, 
                                   Numdeficitcells = 0, mean_deficit = 0,
                                   sd_deficit = 0))
@@ -304,7 +304,7 @@ do_a_region <- function(region_name, region_shape) {
   sd_deficit   <- sd  (vv, na.rm=T)
   
   summary_dat <- rbind(summary_dat, data.frame(
-    Forest = "Grassland",
+    Vegetation = "Grassland",
     Total_area = ((grass_cells * prod(res(grass_mask)))/10000) * ha_to_acres,
     Surplus_area = ((surplus_cells * prod(res(grass_mask)))/10000) * ha_to_acres,
     Deficit_area = ((deficit_cells * prod(res(grass_mask)))/10000) * ha_to_acres,
@@ -316,7 +316,7 @@ do_a_region <- function(region_name, region_shape) {
   # Grass WUI 
   #---------------------------------------------------------------------------#
   summary_dat <- rbind(summary_dat, 
-                       data.frame(Forest = c("Grass WUI", "Grass non-WUI"),
+                       data.frame(Vegetation = c("Grass WUI", "Grass non-WUI"),
                                   Total_area = 0, Surplus_area = 0, 
                                   Deficit_area = 0, mean_deficit = 0,
                                   sd_deficit = 0))
@@ -391,34 +391,6 @@ do_a_region <- function(region_name, region_shape) {
   #---------------------------------------------------------------------------#
   
   
-  
-  #----- Prep a map of shrub deficit -----------------------------------------#
-   lims <- range(values(all_def), na.rm = T)
-  if (abs(lims[1]/lims[2]) > 1.5 || abs(lims[1]/lims[2]) < 0.75) {
-    threshold <- ceiling(min(abs(lims)))
-    breaks <- round(c(seq(from=-threshold, to=0, length=3),
-                seq(from=0, to = threshold, length=3)[2:3]), 0)
-    labels <- c(paste("<", breaks[1]), breaks[2:4], paste(">", breaks[5]))
-    deficit_scale <- scale_fill_grass_c(na.value = NA, name="Deficit < 0",
-                       limits = c(-threshold, threshold),
-                       breaks = breaks,
-                       labels = labels,
-                       oob = scales::squish) 
-  } else {
-    deficit_scale <- scale_fill_grass_c(na.value = NA, name="Deficit < 0")
-  }
-   
-  suppressMessages(shrubplot <- ggplot() + 
-                     geom_spatraster(data = all_def) +
-                     geom_spatvector(data = region_shape, fill=NA) +
-                     theme_bw() +
-                     blank_axes +
-                     #theme(legend.position = "bottom") +
-                     ggtitle("Shrub deficit/surplus") +
-                     deficit_scale)
-  #---------------------------------------------------------------------------#
-  
-  
   #----- Extract table stats -------------------------------------------------#
   
   # Overall area
@@ -446,7 +418,7 @@ do_a_region <- function(region_name, region_shape) {
   sd_deficit   <- sd  (vv, na.rm=T)
   
   summary_dat <- rbind(summary_dat, data.frame(
-    Forest = "Shrubland",
+    Vegetation = "Shrubland",
     Total_area = ((shrub_cells * prod(res(shrub_mask)))/10000) * ha_to_acres,
     Surplus_area = ((surplus_cells * prod(res(shrub_mask)))/10000) * ha_to_acres,
     Deficit_area = ((deficit_cells * prod(res(shrub_mask)))/10000) * ha_to_acres,
@@ -458,7 +430,7 @@ do_a_region <- function(region_name, region_shape) {
   # Shrub WUI 
   #---------------------------------------------------------------------------#
   summary_dat <- rbind(summary_dat, 
-                       data.frame(Forest = c("Shrub WUI", "Shrub non-WUI"),
+                       data.frame(Vegetation = c("Shrub WUI", "Shrub non-WUI"),
                                   Total_area = 0, Surplus_area = 0, 
                                   Deficit_area = 0, mean_deficit = 0,
                                   sd_deficit = 0))
@@ -521,10 +493,10 @@ do_a_region <- function(region_name, region_shape) {
 spark <- terra::vect("../../Spark counties shapefile/spark_watersheds.shp")
 spark <- terra::project(spark, fri)
 
+spark <- spark[-grep("AK -", spark$SPARK)]
+spark <- spark[-grep("BC -", spark$SPARK)]
 
 all_sparks <- unique(spark$SPARK)
-all_sparks <- all_sparks[-grep("AK -", all_sparks)]
-all_sparks <- all_sparks[-grep("BC -", all_sparks)]
 
 summary_table_dat <- NULL
 
