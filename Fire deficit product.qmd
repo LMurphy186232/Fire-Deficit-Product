@@ -26,7 +26,7 @@ terraOptions(tempdir="D:/workspace/Lora/temp") # Terminator
 #terraOptions(tempdir="D:/Lora/temp") # Groot
 ```
 
-# SPARKs
+# SPARKs - based on either watershed, county, or L4 ecoregion
 
 We want summary statistics on fire deficit for SPARK watershed regions. To produce these statistics, I used rasterized values of fire deficit where possible, in frequent fire areas. Fire deficit calculations are based on total fires, *including prescribed burns*.
 
@@ -48,6 +48,26 @@ wui <- terra::rast("../temp_rasters/wui.tif")
 #----- Load SPARK watersheds -------------------------------------------------#
 spark <- terra::vect("../../Spark counties shapefile/spark_watersheds.shp")
 spark <- terra::project(spark, fri)
+
+#----- Load SPARK counties ---------------------------------------------------#
+spark_co <- terra::vect("../../Spark counties shapefile/spark_counties.shp")
+spark_co <- terra::project(spark_co, fri)
+
+#----- Load L4 ecoregions for SPARKs -----------------------------------------#
+# Need more discussion on how to do this. The ecoregions are combined for some
+# SPARKs.
+#spark_l4 <- terra::vect("../../Spark counties shapefile/spark_l4_ecoregions.shp")
+#spark_l4 <- terra::project(spark_l4, fri)
+
+# Need to add SPARK names
+#spark_l4 <- terra::aggregate(spark_l4, by="US_L4NAME")
+#xx <- terra::relate(spark_l4, spark, "overlaps")
+#spark_l4$SPARK <- ""
+#for (i in 1:nrow(xx)) {
+#  sparkname <- unique(spark$SPARK[xx[i,]])
+#  sparkname <- sparkname[!is.na(sparkname)]
+#  if (length(sparkname) != 1) stop("here")
+#}
 
 #----- Load states -----------------------------------------------------------#
 states <- terra::vect("../Data/s_05mr24.shp")
@@ -627,7 +647,7 @@ do_a_region <- function(region_name, region_shape) {
 }
 ```
 
-```{r spark-regions}
+```{r spark-watersheds-regions}
 #| eval: false
 
 all_sparks <- unique(spark$SPARK)
@@ -645,6 +665,47 @@ for (spark_name in all_sparks) {
 
 write.csv(summary_table_dat, "SPARK stats.csv", row.names=F)
 rm(spark, all_sparks)
+```
+
+```{r spark-counties-regions}
+#| eval: false
+
+all_sparks <- unique(spark_co$SPARK)
+all_sparks <- all_sparks[!is.na(all_sparks)]
+all_sparks <- all_sparks[-grep("AK -", all_sparks)]
+
+summary_table_dat <- NULL
+
+for (spark_name in all_sparks) {
+  
+  one_spark <- spark_co[spark_co$SPARK == spark_name]
+  summary_dat <- do_a_region(spark_name, one_spark)
+  summary_table_dat <- rbind(summary_table_dat, summary_dat) 
+}
+
+write.csv(summary_table_dat, "SPARK stats counties.csv", row.names=F)
+rm(spark_co, all_sparks)
+```
+
+
+```{r spark-ecoregions-regions}
+#| eval: false
+
+all_sparks <- unique(spark_l4$SPARK)
+all_sparks <- all_sparks[!is.na(all_sparks)]
+all_sparks <- all_sparks[-grep("AK -", all_sparks)]
+
+summary_table_dat <- NULL
+
+for (spark_name in all_sparks) {
+  
+  one_spark <- spark_co[spark_co$SPARK == spark_name]
+  summary_dat <- do_a_region(spark_name, one_spark)
+  summary_table_dat <- rbind(summary_table_dat, summary_dat) 
+}
+
+write.csv(summary_table_dat, "SPARK stats counties.csv", row.names=F)
+rm(spark_co, all_sparks)
 ```
 
 ```{r make-spark-summary-plot}
