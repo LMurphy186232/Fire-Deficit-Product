@@ -24,8 +24,7 @@ do_a_region <- function(region_name, region_shape) {
   
   #----- ID forests by fire frequency ----------------------------------------#
   forest_mask <- terra::ifel(veg_crop == "Forest", 1, NA)
-  forest_fri  <- terra::mask(fri_crop, forest_mask)
-  
+  forest_fri  <- terra::mask(fri_crop, forest_mask)  
   forest_mat  <- cbind(c(0,20,40), c(20, 40, 100000), 1:3)
   forest_type <- terra::classify(forest_fri, forest_mat)
   levels(forest_type) <- data.frame(ID = 1:3, 
@@ -71,7 +70,7 @@ do_a_region <- function(region_name, region_shape) {
   
   summary_dat <- data.frame(Vegetation = "All forest",
                             Numcells = forest_cells)
-  
+
   summary_dat <- rbind(summary_dat,
                        data.frame(Vegetation = levels(forest_type)[[1]]$category,
                                   Numcells = valu))
@@ -158,7 +157,7 @@ do_a_region <- function(region_name, region_shape) {
                                   Numdeficitcells = 0, Numgoldilockscells = NA, 
                                   Nodatacells = NA,
                                   mean_deficit = 0, sd_deficit = 0))
-  
+
   #----- Overall forest WUI area ---------------------------------------------#
   datum <- mask(wui_crop, forest_type)
   summary_dat$Numcells[summary_dat$Vegetation == "Forest WUI"] <- sum(!is.na(values(datum)), na.rm=T)
@@ -203,14 +202,14 @@ do_a_region <- function(region_name, region_shape) {
   # Grass
   #---------------------------------------------------------------------------#
   grass_mask <- terra::ifel(veg_crop == "Grass", 1, NA)
-  
+
   #----- Make a total fire deficit map, including long deficit ---------------#
   long_crop <- terra::crop(long_grass_def, region_shape)
   long_crop <- terra::mask(long_crop     , region_shape)
   
   short_crop <- terra::crop(short_def , region_shape)
   short_crop <- terra::mask(short_crop, region_shape)
-  
+
   #----- I want to only substitute eco-level deficit where there isn't short -#
   long_crop <- terra::mask(long_crop, short_crop, inverse = T)
   all_def <- terra::subst(long_crop, NA, 0) + terra::subst(short_crop, NA, 0)
@@ -279,7 +278,7 @@ do_a_region <- function(region_name, region_shape) {
                                   Numdeficitcells = 0, Numgoldilockscells = NA,
                                   Nodatacells = NA,
                                   mean_deficit = 0, sd_deficit = 0))
-  
+
   #----- Overall grass WUI area ---------------------------------------------#
   datum <- mask(grass_mask, wui_crop)
   numcells <- sum(!is.na(values(datum)), na.rm=T)
@@ -298,7 +297,7 @@ do_a_region <- function(region_name, region_shape) {
   surp <- terra::mask(surplus, wui_crop, inverse = T)
   numcells <- sum(values(surp), na.rm=T)
   summary_dat$Numsurpluscells[summary_dat$Vegetation == "Grass non-WUI"] <- numcells
-  
+
   rm(surplus, surp)
   invisible(gc())
   
@@ -338,7 +337,7 @@ do_a_region <- function(region_name, region_shape) {
   
   short_crop <- terra::crop(short_def , region_shape)
   short_crop <- terra::mask(short_crop, region_shape)
-  
+
   #----- I want to only substitute eco-level deficit where there isn't short -#
   long_crop <- terra::mask(long_crop, short_crop, inverse = T)
   all_def <- terra::subst(long_crop, NA, 0) + terra::subst(short_crop, NA, 0)
@@ -427,7 +426,7 @@ do_a_region <- function(region_name, region_shape) {
   surp <- terra::mask(surplus, wui_crop, inverse = T)
   numcells <- sum(values(surp), na.rm=T)
   summary_dat$Numsurpluscells[summary_dat$Vegetation == "Shrub non-WUI"] <- numcells
-  
+
   rm(surplus, surp)
   invisible(gc())
   
@@ -471,6 +470,6 @@ do_a_region <- function(region_name, region_shape) {
   summary_dat$Region <- region_name
   rm(fri_crop, veg_crop, wui_crop)
   invisible(gc())
-  
+
   return(summary_dat)
 }
