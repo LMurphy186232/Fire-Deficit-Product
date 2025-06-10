@@ -1,10 +1,10 @@
 ---
-title: "Fire deficit product"
-format: docx
+title: "SPARKs Fire Deficit"
+format: pdf
 editor: source
 author: Lora Murphy
 date: today
-output-file: "Fire deficit product"
+output-file: "SPARKs Fire Deficit"
 ---
 
 ```{r setup, include=FALSE}
@@ -26,14 +26,22 @@ terraOptions(tempdir="D:/workspace/Lora/temp") # Terminator
 #terraOptions(tempdir="D:/Lora/temp") # Groot
 ```
 
-# SPARKs - based on either watershed, county, or L4 ecoregion
+# SPARKs Fire Deficit
 
-We want summary statistics on fire deficit for SPARK watershed regions. To produce these statistics, I used rasterized values of fire deficit where possible, in frequent fire areas. Fire deficit calculations are based on total fires, *including prescribed burns*.
+Fire deficit and surplus is a measure of recent fire frequency compared to historical fire frequency. Historical fire regimes are based on Landfire fire return intervals.
 
-Areas in less-frequent fire areas (FRI > 40) received the value of the ecoregion-level deficit in each pixel. There are different ecoregion-level deficit values for forest, grasslands, and shrublands (see later in this document for details) and the appropriate value was used for each vegetation type. Stats are calculated by aggregating over all the raster pixels in a SPARK, which has the effect of weighting means by area when including the ecoregion-level values.
+How to interpret surplus/deficit values: Values above zero are surplus, and represent the number of times more an area has burned than it should have (i.e. a value of 2 means the area has burned twice as often as expected). Values below zero are deficit, and are interpretable in the same way (-2 means the area should have burned twice as often as it did).
+
+Fire deficit calculations are based on total fires, *including prescribed burns*.
+
+Fire deficit was calculated in pixels of 30 by 30 meters. In frequent-fire areas (historical fire return interval is less than 40 years), each pixel has a meaningful local number. For less-frequent fire areas (FRI > 40), we calculated fire deficit at the L3 ecoregion level by comparing the historical fire return interval with the length of time it would take to burn the ecoregion area, based on recent fire activity. Summary statistics are calculated by aggregating over all the raster pixels in a SPARK, which has the effect of weighting means by area when including the ecoregion-level values.
+
+Fire deficit was calculated separately for each vegetation type. Areas of surplus and deficit may not add up precisely to the total area of a vegetation type, due to areas where we do not have fire data.
+
+Summary statistics were calculated for counties, HUC8 watersheds, and L4 ecoregions that touch SPARKs. The values are for the entire county, watershed, or ecoregion, not just the parts within the SPARK area.
 
 ```{r regions-prep}
-#| eval: true
+#| eval: false
 
 #-----------------------------------------------------------------------------#
 # PLEASE NOTE:
@@ -60,7 +68,7 @@ source("functions.R")
 
 
 ```{r spark-watersheds-regions}
-#| eval: true
+#| eval: false
 
 #----- Load SPARK watersheds -------------------------------------------------#
 spark <- terra::vect("../../Spark counties shapefile/spark_watersheds.shp")
@@ -99,7 +107,7 @@ rm(spark, summary_dat, summary_table_dat)
 ```
 
 ```{r spark-counties-regions}
-#| eval: true
+#| eval: false
 
 #----- Load SPARK counties ---------------------------------------------------#
 spark_co <- terra::vect("../../Spark counties shapefile/spark_counties.shp")
@@ -138,7 +146,7 @@ rm(spark_co, summary_dat, summary_table_dat)
 ```
 
 ```{r spark-ecoregions-regions}
-#| eval: true
+#| eval: false
 
 #----- Load L4 ecoregions for SPARKs -----------------------------------------#
 spark_l4 <- terra::vect("../../Spark counties shapefile/spark_l4_ecoregions.shp")
@@ -165,45 +173,251 @@ rm(spark_co, all_sparks)
 
 
 
-```{r}
+```{r make-pretty-tables}
 #| eval: false
 
-summary_dat <- read.csv("SPARK stats.csv")
-#----- Prep and display table ------------------------------------------------#
+#-----------------------------------------------------------------------------#
+# Based on county
+#-----------------------------------------------------------------------------#
+dat <- read.csv("SPARK counties.csv")
 
-summary_dat$meansd <- paste(round(summary_dat$mean_deficit, 2), "$\\pm$", 
-                            round(summary_dat$sd_deficit, 2))
-summary_dat$mean_deficit <- NULL
-summary_dat$sd_deficit <- NULL
+summary_dat <- dat %>% select(SPARK, Region, Vegetation, Total_area,
+                              Deficit_area, Surplus_area, mean_deficit,
+                              sd_deficit) %>%
+  mutate(meansd = paste(round(mean_deficit, 2), "±", 
+                        round(sd_deficit, 2)),
+         Total_area = round(Total_area, 0),
+         Deficit_area = round(Deficit_area, 0),
+         Surplus_area = round(Surplus_area, 0)) %>%
+  filter(Vegetation %in% c("All forest", "Grassland", "Shrubland")) %>%
+  rename('County' = Region,
+         'Vegetation type' = Vegetation,
+         'Total area (ac)' = Total_area,
+         'Area in deficit (ac)' = Deficit_area,
+         'Area in surplus (ac)' = Surplus_area,
+         'Mean deficit (sd)' = meansd) %>%
+  select(-c(mean_deficit, sd_deficit))
+write.csv(summary_dat, "Pretty table county.csv", row.names=F)
+  
 
-summary_dat$Total_area <- prettyNum(round(summary_dat$Total_area, 0), 
-                                    big.mark = ",")
+summary_dat <- dat %>% select(SPARK, Region, Vegetation, Total_area,
+                              Deficit_area, Surplus_area, mean_deficit,
+                              sd_deficit) %>%
+  mutate(meansd = paste(round(mean_deficit, 2), "±", 
+                        round(sd_deficit, 2)),
+         Total_area = round(Total_area, 0),
+         Deficit_area = round(Deficit_area, 0),
+         Surplus_area = round(Surplus_area, 0)) %>%
+  filter(Vegetation %in% c("Frequent fire (FRI < 20)",
+                           "Frequent fire (FRI 20-40)",
+                           "Infrequent fire")) %>%
+  rename('County' = Region,
+         'Forest type' = Vegetation,
+         'Total area (ac)' = Total_area,
+         'Area in deficit (ac)' = Deficit_area,
+         'Area in surplus (ac)' = Surplus_area,
+         'Mean deficit (sd)' = meansd) %>%
+  select(-c(mean_deficit, sd_deficit))
+write.csv(summary_dat, "Pretty table county detailed forest.csv", row.names=F)
 
-summary_dat$Surplus_area <- prettyNum(round(summary_dat$Surplus_area, 0), 
-                                      big.mark = ",")
 
-summary_dat$Deficit_area <- prettyNum(round(summary_dat$Deficit_area, 0), 
-                                      big.mark = ",")
+summary_dat <- dat %>% select(SPARK, Region, Vegetation, Total_area,
+                              Deficit_area, Surplus_area, mean_deficit,
+                              sd_deficit) %>%
+  mutate(meansd = paste(round(mean_deficit, 2), "±", 
+                        round(sd_deficit, 2)),
+         Total_area = round(Total_area, 0),
+         Deficit_area = round(Deficit_area, 0),
+         Surplus_area = round(Surplus_area, 0)) %>%
+  filter(Vegetation %in% c("Forest WUI",
+                           "Forest non-WUI",
+                           "Grass WUI",
+                           "Grass non-WUI",
+                           "Shrub WUI",
+                           "Shrub non-WUI")) %>%
+  rename('County' = Region,
+         'Forest type' = Vegetation,
+         'Total area (ac)' = Total_area,
+         'Area in deficit (ac)' = Deficit_area,
+         'Area in surplus (ac)' = Surplus_area,
+         'Mean deficit (sd)' = meansd) %>%
+  select(-c(mean_deficit, sd_deficit))
+write.csv(summary_dat, "Pretty table county WUI.csv", row.names=F)
+#-----------------------------------------------------------------------------#
 
 
 
-# Can't do this pretty table automagically for a Word doc
-#header_indexer <- rep(5, length(unique(summary_dat$SPARK)))
-#names(header_indexer) <- unique(summary_dat$SPARK)
+#-----------------------------------------------------------------------------#
+# Based on watershed
+#-----------------------------------------------------------------------------#
+dat <- read.csv("SPARK watersheds.csv")
 
-#summary_dat$SPARK <- NULL
-#kable(summary_dat, booktabs = TRUE,
-#      col.names = c("Vegetation type", "Total area (ac)",
-#                "Area in surplus", "Area in deficit",
-#                "Mean deficit"), 
-#  digits = 1) %>% 
-#  pack_rows(index = header_indexer)
+summary_dat <- dat %>% select(SPARK, Region, Vegetation, Total_area,
+                              Deficit_area, Surplus_area, mean_deficit,
+                              sd_deficit) %>%
+  mutate(meansd = paste(round(mean_deficit, 2), "±", 
+                        round(sd_deficit, 2)),
+         Total_area = round(Total_area, 0),
+         Deficit_area = round(Deficit_area, 0),
+         Surplus_area = round(Surplus_area, 0)) %>%
+  filter(Vegetation %in% c("All forest", "Grassland", "Shrubland")) %>%
+  rename('HUC8 Watershed' = Region,
+         'Vegetation type' = Vegetation,
+         'Total area (ac)' = Total_area,
+         'Area in deficit (ac)' = Deficit_area,
+         'Area in surplus (ac)' = Surplus_area,
+         'Mean deficit (sd)' = meansd) %>%
+  select(-c(mean_deficit, sd_deficit))
+write.csv(summary_dat, "Pretty table watershed.csv", row.names=F)
+  
 
-print(knitr::kable(summary_dat, col.names = c("Vegetation type", "Total area (ac)",
-                                              "Area in surplus", "Area in deficit",
-                                              "SPARK", "Mean deficit"), digits = 1))
-#}
+summary_dat <- dat %>% select(SPARK, Region, Vegetation, Total_area,
+                              Deficit_area, Surplus_area, mean_deficit,
+                              sd_deficit) %>%
+  mutate(meansd = paste(round(mean_deficit, 2), "±", 
+                        round(sd_deficit, 2)),
+         Total_area = round(Total_area, 0),
+         Deficit_area = round(Deficit_area, 0),
+         Surplus_area = round(Surplus_area, 0)) %>%
+  filter(Vegetation %in% c("Frequent fire (FRI < 20)",
+                           "Frequent fire (FRI 20-40)",
+                           "Infrequent fire")) %>%
+  rename('HUC8 Watershed' = Region,
+         'Forest type' = Vegetation,
+         'Total area (ac)' = Total_area,
+         'Area in deficit (ac)' = Deficit_area,
+         'Area in surplus (ac)' = Surplus_area,
+         'Mean deficit (sd)' = meansd) %>%
+  select(-c(mean_deficit, sd_deficit))
+write.csv(summary_dat, "Pretty table watershed detailed forest.csv", row.names=F)
 
+
+summary_dat <- dat %>% select(SPARK, Region, Vegetation, Total_area,
+                              Deficit_area, Surplus_area, mean_deficit,
+                              sd_deficit) %>%
+  mutate(meansd = paste(round(mean_deficit, 2), "±", 
+                        round(sd_deficit, 2)),
+         Total_area = round(Total_area, 0),
+         Deficit_area = round(Deficit_area, 0),
+         Surplus_area = round(Surplus_area, 0)) %>%
+  filter(Vegetation %in% c("Forest WUI",
+                           "Forest non-WUI",
+                           "Grass WUI",
+                           "Grass non-WUI",
+                           "Shrub WUI",
+                           "Shrub non-WUI")) %>%
+  rename('HUC8 Watershed' = Region,
+         'Forest type' = Vegetation,
+         'Total area (ac)' = Total_area,
+         'Area in deficit (ac)' = Deficit_area,
+         'Area in surplus (ac)' = Surplus_area,
+         'Mean deficit (sd)' = meansd) %>%
+  select(-c(mean_deficit, sd_deficit))
+write.csv(summary_dat, "Pretty table watershed WUI.csv", row.names=F)
+#-----------------------------------------------------------------------------#
+
+
+
+
+
+#-----------------------------------------------------------------------------#
+# Based on ecoregion
+#-----------------------------------------------------------------------------#
+dat <- read.csv("SPARK ecoregions.csv")
+
+#----- Add SPARK to each ecoregion -------------------------------------------#
+dat$SPARK <- NA
+spark <- "AZ - Coconino County/Flagstaff Region"
+sp <- read.csv("../SPARK counties shapefile/az coconino l4 ecoregions.csv")
+x <- which(dat$Region %in% sp$US_L4NAME)
+dat$SPARK[x] <- ifelse(is.na(dat$SPARK[x]), spark, paste(dat$SPARK[x], spark, sep=", "))
+
+spark <- "WA - Klickitat County"
+sp <- read.csv("../SPARK counties shapefile/wa klickitat l4 ecoregions.csv")
+x <- which(dat$Region %in% sp$US_L4NAME)
+dat$SPARK[x] <- ifelse(is.na(dat$SPARK[x]), spark, paste(dat$SPARK[x], spark, sep=", "))
+
+spark <- "CA - Tahoe Sierra SPARK"
+sp <- read.csv("../SPARK counties shapefile/tahoe l4 ecoregions.csv")
+x <- which(dat$Region %in% sp$US_L4NAME)
+dat$SPARK[x] <- ifelse(is.na(dat$SPARK[x]), spark, paste(dat$SPARK[x], spark, sep=", "))
+
+spark <- "CA - Santa Barbara County"
+sp <- read.csv("../SPARK counties shapefile/santa barbara l4 ecoregions.csv")
+x <- which(dat$Region %in% sp$US_L4NAME)
+dat$SPARK[x] <- ifelse(is.na(dat$SPARK[x]), spark, paste(dat$SPARK[x], spark, sep=", "))
+
+spark <- "CO - Gunnison County and Watersheds"
+sp <- read.csv("../SPARK counties shapefile/co gunnison l4 ecoregions.csv")
+x <- which(dat$Region %in% sp$US_L4NAME)
+dat$SPARK[x] <- ifelse(is.na(dat$SPARK[x]), spark, paste(dat$SPARK[x], spark, sep=", "))
+
+
+
+summary_dat <- dat %>% filter(!is.na(SPARK)) %>%
+  select(SPARK, Region, Vegetation, Total_area,
+                              Deficit_area, Surplus_area, mean_deficit,
+                              sd_deficit) %>%
+  mutate(meansd = paste(round(mean_deficit, 2), "±", 
+                        round(sd_deficit, 2)),
+         Total_area = round(Total_area, 0),
+         Deficit_area = round(Deficit_area, 0),
+         Surplus_area = round(Surplus_area, 0)) %>%
+  filter(Vegetation %in% c("All forest", "Grassland", "Shrubland")) %>%
+  rename('L4 Ecoregion' = Region,
+         'Vegetation type' = Vegetation,
+         'Total area (ac)' = Total_area,
+         'Area in deficit (ac)' = Deficit_area,
+         'Area in surplus (ac)' = Surplus_area,
+         'Mean deficit (sd)' = meansd) %>%
+  select(-c(mean_deficit, sd_deficit))
+write.csv(summary_dat, "Pretty table ecoregion.csv", row.names=F)
+  
+
+summary_dat <- dat %>% select(SPARK, Region, Vegetation, Total_area,
+                              Deficit_area, Surplus_area, mean_deficit,
+                              sd_deficit) %>%
+  mutate(meansd = paste(round(mean_deficit, 2), "±", 
+                        round(sd_deficit, 2)),
+         Total_area = round(Total_area, 0),
+         Deficit_area = round(Deficit_area, 0),
+         Surplus_area = round(Surplus_area, 0)) %>%
+  filter(Vegetation %in% c("Frequent fire (FRI < 20)",
+                           "Frequent fire (FRI 20-40)",
+                           "Infrequent fire")) %>%
+  rename('L4 Ecoregion' = Region,
+         'Forest type' = Vegetation,
+         'Total area (ac)' = Total_area,
+         'Area in deficit (ac)' = Deficit_area,
+         'Area in surplus (ac)' = Surplus_area,
+         'Mean deficit (sd)' = meansd) %>%
+  select(-c(mean_deficit, sd_deficit))
+write.csv(summary_dat, "Pretty table ecoregion detailed forest.csv", row.names=F)
+
+
+summary_dat <- dat %>% select(SPARK, Region, Vegetation, Total_area,
+                              Deficit_area, Surplus_area, mean_deficit,
+                              sd_deficit) %>%
+  mutate(meansd = paste(round(mean_deficit, 2), "±", 
+                        round(sd_deficit, 2)),
+         Total_area = round(Total_area, 0),
+         Deficit_area = round(Deficit_area, 0),
+         Surplus_area = round(Surplus_area, 0)) %>%
+  filter(Vegetation %in% c("Forest WUI",
+                           "Forest non-WUI",
+                           "Grass WUI",
+                           "Grass non-WUI",
+                           "Shrub WUI",
+                           "Shrub non-WUI")) %>%
+  rename('L4 Ecoregion' = Region,
+         'Forest type' = Vegetation,
+         'Total area (ac)' = Total_area,
+         'Area in deficit (ac)' = Deficit_area,
+         'Area in surplus (ac)' = Surplus_area,
+         'Mean deficit (sd)' = meansd) %>%
+  select(-c(mean_deficit, sd_deficit))
+write.csv(summary_dat, "Pretty table ecoregion WUI.csv", row.names=F)
+#-----------------------------------------------------------------------------#
 ```
 
 ```{r make-spark-barplot}
@@ -254,15 +468,83 @@ veg_levels = c("Shrubland Surplus" = adjustcolor("burlywood4", alpha.f=0.5),
 #graph_dat$Region <- as.factor(graph_dat$Region)
 graph_dat$Vegetation <- factor(graph_dat$Vegetation, levels = names(veg_levels))
 
-graphs_list = list()
-ggplot(data = graph_dat, aes(y = Region, x = Area, fill = Vegetation)) +
-  geom_bar(stat='identity') + #, orientation = 'y') +
-  scale_fill_manual(values = veg_levels, name="") +
-  labs(x = "Relative area", y = "County", 
-       title = "Breakdown of county area by vegetation type and deficit status") +
-  theme_minimal() +
-  facet_wrap(~SPARK, ncol=1, shrink=T, scales="free")
+spark <- "WA - Klickitat County"
+wa_spark <- ggplot(data = graph_dat %>% filter(SPARK == "WA - Klickitat County"), 
+           aes(y = Region, x = Area, fill = Vegetation)) +
+    geom_bar(stat='identity') + #, orientation = 'y') +
+    scale_fill_manual(values = veg_levels, name="") +
+    labs(x = "Relative area", y = "County", 
+         title = spark) +
+    theme_minimal()
+
+spark <- "CA - Tahoe Sierra SPARK"
+tahoe_spark <- ggplot(data = graph_dat %>% filter(SPARK == "CA - Tahoe Sierra SPARK"), 
+           aes(y = Region, x = Area, fill = Vegetation)) +
+    geom_bar(stat='identity') + #, orientation = 'y') +
+    scale_fill_manual(values = veg_levels, name="") +
+    labs(x = "Relative area", y = "County", 
+         title = spark) +
+    theme_minimal()
+
+spark <- "CA - Santa Barbara County"
+sb_spark <- ggplot(data = graph_dat %>% filter(SPARK == "CA - Santa Barbara County"), 
+           aes(y = Region, x = Area, fill = Vegetation)) +
+    geom_bar(stat='identity') + #, orientation = 'y') +
+    scale_fill_manual(values = veg_levels, name="") +
+    labs(x = "Relative area", y = "County", 
+         title = spark) +
+    theme_minimal()
+
+spark <- "CO - Gunnison County and Watersheds"
+co_spark <- ggplot(data = graph_dat %>% filter(SPARK == "CO - Gunnison County and Watersheds"), 
+           aes(y = Region, x = Area, fill = Vegetation)) +
+    geom_bar(stat='identity') + #, orientation = 'y') +
+    scale_fill_manual(values = veg_levels, name="") +
+    labs(x = "Relative area", y = "County", 
+         title = spark) +
+    theme_minimal()
 
 
+spark <- "AZ - Coconino County/Flagstaff Region"
+az_spark <- ggplot(data = graph_dat %>% filter(SPARK == spark), 
+           aes(y = Region, x = Area, fill = Vegetation)) +
+    geom_bar(stat='identity') + #, orientation = 'y') +
+    scale_fill_manual(values = veg_levels, name="") +
+    labs(x = "Relative area", y = "County", 
+         title = spark) +
+    theme_minimal()
+
+
+
+layout = c(
+  area(1,1),
+  area(2,1),
+  area(3,1,10),
+  area(11,1),
+  area(12,1)
+)
+
+az_spark + sb_spark + tahoe_spark + co_spark + wa_spark +
+  plot_layout(design=layout,
+              axis_titles = "collect", guides="collect") 
+ggsave("County barplot.png")
+
+#tahoe_spark
+
+
+#graphs_list = list()
+
+#for (spark in unique(graph_dat$SPARK)) {
+#  graphs_list[[spark]] <- 
+#    ggplot(data = graph_dat %>% filter(SPARK == spark), 
+#           aes(y = Region, x = Area, fill = Vegetation)) +
+#    geom_bar(stat='identity') + #, orientation = 'y') +
+#    scale_fill_manual(values = veg_levels, name="") +
+#    labs(x = "Relative area", y = "County", 
+#         title = spark) +
+#    theme_minimal()
+#}
+#patchwork::wrap_plots(graphs_list) +
+#  plot_layout(ncol = 1, axis_titles = "collect", guides="collect") 
 
 ```
