@@ -105,9 +105,10 @@ rm(spark, summary_dat, summary_table_dat)
 spark_co <- terra::vect("../../Spark counties shapefile/spark_counties.shp")
 spark_co <- terra::project(spark_co, fri)
 
+spark_co <- spark_co[-grep("AK -", spark_co$SPARK)]
+spark_co <- spark_co[!is.na(spark_co$SPARK),]
+
 all_sparks <- unique(spark_co$SPARK)
-all_sparks <- all_sparks[!is.na(all_sparks)]
-all_sparks <- all_sparks[-grep("AK -", all_sparks)]
 
 summary_table_dat <- NULL
 
@@ -148,8 +149,10 @@ summary_table_dat <- NULL
 all_eco <- unique(spark_l4$US_L4NAME)
 for (spark_name in all_eco) {
   
-  one_spark <- spark_co[spark_l4$US_L4NAME == spark_name]
+  one_spark <- spark_l4[spark_l4$US_L4NAME == spark_name]
   summary_dat <- do_a_region(spark_name, one_spark)
+  
+  if (class(summary_dat$sd_deficit) == "list") stop("here")
   summary_table_dat <- rbind(summary_table_dat, summary_dat) 
 }
 
@@ -157,6 +160,8 @@ write.csv(summary_table_dat, "SPARK ecoregions.csv", row.names=F)
 
 rm(spark_co, all_sparks)
 ```
+
+
 
 
 
@@ -204,82 +209,60 @@ print(knitr::kable(summary_dat, col.names = c("Vegetation type", "Total area (ac
 ```{r make-spark-barplot}
 #| eval: false
 
-summary_dat <- read.csv("SPARK stats.csv")
+summary_dat <- read.csv("SPARK counties.csv")
 
 #----- Take out WUI ----------------------------------------------------------#
-x <- grep("WUI", summary_dat$Forest)
+x <- grep("WUI", summary_dat$Vegetation)
 summary_dat <- summary_dat[-x,]
 
+#----- Take out forest breakdowns --------------------------------------------#
+x <- grep("requent", summary_dat$Vegetation)
+summary_dat <- summary_dat[-x,]
 
-#one <- summary_dat[summary_dat$Region == 'WA - Klickitat County',]
-summary_dat$Region <- as.factor(summary_dat$Region)
-ggplot(data = summary_dat, aes(y = Region, x = Total_area, fill = Forest)) +
-  geom_bar(stat='identity', orientation = 'y')
+graph_dat <- left_join(summary_dat, 
+                       # Add a total area across the county
+                       summary_dat %>% group_by(Region) %>% 
+                         summarize(Total = sum(Surplus_area, Deficit_area))) %>%
+  
+  # Select out some columns that we need
+  select(Region, SPARK, Vegetation, Surplus_area, Deficit_area, Total) %>%
+  
+  # Get relative areas adding up to 1
+  mutate(Surplus_area = Surplus_area / Total,
+         Deficit_area = Deficit_area / Total) %>%
+  
+  # Get rid of total column, don't need it now
+  select(-Total) %>%
+  
+  # Reshape for ggplot
+  pivot_longer(cols = c(Surplus_area, Deficit_area), values_to = "Area") %>%
+  mutate(Vegetation = if_else(Vegetation == "All forest", 
+                              "Forest", Vegetation)) %>%
+  mutate(name = gsub("_area", "", name)) %>%
+  mutate(Vegetation = paste(Vegetation, name)) %>%
+  select(-name)
 
+# Levels and colors: apparently have to do in reverse order
+veg_levels = c("Shrubland Surplus" = adjustcolor("burlywood4", alpha.f=0.5), 
+               "Shrubland Deficit" = "burlywood4", 
+               "Grassland Surplus" = adjustcolor("darkgoldenrod3", alpha.f=0.5),
+               "Grassland Deficit" = "darkgoldenrod3", 
+               "Forest Surplus" = adjustcolor("darkgreen", alpha.f=0.5), 
+               "Forest Deficit" = "darkgreen")
 
-#----- A nice graph showing all the regions ----------------------------------#
-summary_dat$def_lower <- summary_dat$mean_deficit - summary_dat$sd_deficit
-summary_dat$def_upper <- summary_dat$mean_deficit + summary_dat$sd_deficit
+# Factors for better grouping
+#graph_dat$Region <- as.factor(graph_dat$Region)
+graph_dat$Vegetation <- factor(graph_dat$Vegetation, levels = names(veg_levels))
 
-# Make short display names for SPARKs
-summary_dat$SPARK <- NA
-x <- which(summary_dat$Region == "AZ - Coconino County-Flagstaff Region")
-summary_dat$SPARK[x] <- "AZ Flagstaff"
-x <- which(summary_dat$Region == "CA - Santa Barbara County")
-summary_dat$SPARK[x] <- "CA Sta. Barbara"
-x <- which(summary_dat$Region == "CA - Tahoe Sierra SPARK")
-summary_dat$SPARK[x] <- "CA Tahoe"
-x <- which(summary_dat$Region == "CO - Gunnison County and Watersheds")
-summary_dat$SPARK[x] <- "CO Gunnison Co"
-x <- which(summary_dat$Region == "WA - Klickitat County")
-summary_dat$SPARK[x] <- "WA Klickitat Co"
-x <- which(summary_dat$Region == "WY - Upper Colorado Basin, Green River")
-summary_dat$SPARK[x] <- "WY Colorado/Green"
-
-#----- A plot with no restriction on Y axis ----------------------------------#
-suppressMessages(region_plot <- 
-  ggplot(summary_dat, aes(x = SPARK, y = mean_deficit, color = Forest)) +
-  geom_point(position = position_dodge(width = 0.5), size = 3) +
-  geom_linerange(
-    aes(ymin = def_lower, ymax = def_upper),
-    position = position_dodge(width = 0.5)#,
-    #width = 0.2
-  ) +
-  geom_hline(yintercept = 0) +
-  labs(
-    title = "Mean+sd deficit by SPARK (negative values = deficit)",
-    x = "",
-    y = "Fire deficit (bars show sd)",
-    color = NULL
-    #caption = "Two shrubs omitted for readability"
-  ) +
+graphs_list = list()
+ggplot(data = graph_dat, aes(y = Region, x = Area, fill = Vegetation)) +
+  geom_bar(stat='identity') + #, orientation = 'y') +
+  scale_fill_manual(values = veg_levels, name="") +
+  labs(x = "Relative area", y = "County", 
+       title = "Breakdown of county area by vegetation type and deficit status") +
   theme_minimal() +
-  theme(legend.position = "bottom"))
-ggsave("figs/spark_summary_unzoomed.png", region_plot, width=8.25)
+  facet_wrap(~SPARK, ncol=1, shrink=T, scales="free")
 
-#----- A plot zoomed in, to show more central points -------------------------#
-xmin = -10
-xmax = 5
-summary_dat$def_lower2 <- pmax(summary_dat$def_lower, xmin)
-summary_dat$def_upper2 <- pmin(summary_dat$def_upper, xmax)
-suppressMessages(region_plot <- 
-  ggplot(summary_dat, aes(x = SPARK, y = mean_deficit, color = Forest)) +
-  geom_point(position = position_dodge(width = 0.5), size = 3) +
-  geom_linerange(
-    aes(ymin = def_lower2, ymax = def_upper2),
-    position = position_dodge(width = 0.5)#,
-    #width = 0.2
-  ) +
-  geom_hline(yintercept = 0) +
-  ylim(c(xmin, xmax)) +
-  labs(
-    title = "Zoomed in: mean+sd deficit by SPARK (negative values = deficit)",
-    x = "",
-    y = "Fire deficit (bars show sd)",
-    color = NULL,
-    caption = "Zoomed in for readability, some points omitted"
-  ) +
-  theme_minimal() +
-  theme(legend.position = "bottom"))
-ggsave("figs/spark_summary.png", region_plot, width=8.25)
+
+
 ```
