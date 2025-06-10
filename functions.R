@@ -142,11 +142,11 @@ do_a_region <- function(region_name, region_shape) {
   
   datum <- terra::zonal(all_def, forest_type, fun="mean")
   x <- match(datum$category, summary_dat$Vegetation)
-  summary_dat$mean_deficit[x] <- datum$forest_def
+  summary_dat$mean_deficit[x] <- unlist(datum$forest_def)
   
   datum <- terra::zonal(all_def, forest_type, fun="sd")
   x <- match(datum$category, summary_dat$Vegetation)
-  summary_dat$sd_deficit[x] <- datum$forest_def
+  summary_dat$sd_deficit[x] <- unlist(datum$forest_def)
   
   #---------------------------------------------------------------------------#
   # Forest WUI 
