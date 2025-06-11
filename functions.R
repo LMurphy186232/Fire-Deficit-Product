@@ -196,7 +196,7 @@ do_a_region <- function(region_name, region_shape) {
   goldf <- terra::mask(goldilocks, wui_crop)
   summary_dat$Numgoldilockscells[summary_dat$Vegetation == "Forest WUI"] <- sum(values(goldf), na.rm=T)
   goldf <- terra::mask(goldilocks, wui_crop, inverse = T)
-  summary_dat$Numdeficitcells[summary_dat$Vegetation == "Forest non-WUI"] <- sum(values(goldf), na.rm=T)
+  summary_dat$Numgoldilockscells[summary_dat$Vegetation == "Forest non-WUI"] <- sum(values(goldf), na.rm=T)
   rm(goldilocks, goldf)
   invisible(gc())
   
@@ -331,7 +331,7 @@ do_a_region <- function(region_name, region_shape) {
   goldf <- terra::mask(goldilocks, wui_crop)
   summary_dat$Numgoldilockscells[summary_dat$Vegetation == "Grass WUI"] <- sum(values(goldf), na.rm=T)
   goldf <- terra::mask(goldilocks, wui_crop, inverse = T)
-  summary_dat$Numdeficitcells[summary_dat$Vegetation == "Grass non-WUI"] <- sum(values(goldf), na.rm=T)
+  summary_dat$Numgoldilockscells[summary_dat$Vegetation == "Grass non-WUI"] <- sum(values(goldf), na.rm=T)
   rm(goldilocks, goldf)
   invisible(gc())
   
@@ -468,7 +468,7 @@ do_a_region <- function(region_name, region_shape) {
   goldf <- terra::mask(goldilocks, wui_crop)
   summary_dat$Numgoldilockscells[summary_dat$Vegetation == "Shrub WUI"] <- sum(values(goldf), na.rm=T)
   goldf <- terra::mask(goldilocks, wui_crop, inverse = T)
-  summary_dat$Numdeficitcells[summary_dat$Vegetation == "Shrub non-WUI"] <- sum(values(goldf), na.rm=T)
+  summary_dat$Numgoldilockscells[summary_dat$Vegetation == "Shrub non-WUI"] <- sum(values(goldf), na.rm=T)
   rm(goldilocks, goldf)
   invisible(gc())
   
