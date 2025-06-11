@@ -41,7 +41,7 @@ Fire deficit was calculated separately for each vegetation type. Areas of surplu
 Summary statistics were calculated for counties, HUC8 watersheds, and L4 ecoregions that touch SPARKs. The values are for the entire county, watershed, or ecoregion, not just the parts within the SPARK area.
 
 ```{r regions-prep}
-#| eval: false
+#| eval: true
 
 #-----------------------------------------------------------------------------#
 # PLEASE NOTE:
@@ -68,7 +68,7 @@ source("functions.R")
 
 
 ```{r spark-watersheds-regions}
-#| eval: false
+#| eval: true
 
 #----- Load SPARK watersheds -------------------------------------------------#
 spark <- terra::vect("../../Spark counties shapefile/spark_watersheds.shp")
@@ -107,7 +107,7 @@ rm(spark, summary_dat, summary_table_dat)
 ```
 
 ```{r spark-counties-regions}
-#| eval: false
+#| eval: true
 
 #----- Load SPARK counties ---------------------------------------------------#
 spark_co <- terra::vect("../../Spark counties shapefile/spark_counties.shp")
@@ -146,7 +146,7 @@ rm(spark_co, summary_dat, summary_table_dat)
 ```
 
 ```{r spark-ecoregions-regions}
-#| eval: false
+#| eval: true
 
 #----- Load L4 ecoregions for SPARKs -----------------------------------------#
 spark_l4 <- terra::vect("../../Spark counties shapefile/spark_l4_ecoregions.shp")
@@ -166,7 +166,7 @@ for (spark_name in all_eco) {
 
 write.csv(summary_table_dat, "SPARK ecoregions.csv", row.names=F)
 
-rm(spark_co, all_sparks)
+rm(spark_l4, all_eco)
 ```
 
 
@@ -174,7 +174,7 @@ rm(spark_co, all_sparks)
 
 
 ```{r make-pretty-tables}
-#| eval: false
+#| eval: true
 
 #-----------------------------------------------------------------------------#
 # Based on county

@@ -80,7 +80,7 @@ do_a_region <- function(region_name, region_shape) {
   #----- Area in surplus -----------------------------------------------------#
   summary_dat$Numsurpluscells <- 0
   
-  surplus <- terra::ifel(all_def > 0, 1, 0)
+  surplus <- terra::ifel(all_def > 1.2, 1, 0)
   # Surplus - All forest
   vv <- values(surplus)
   surplus_cells <- sum(vv, na.rm=T)
@@ -98,7 +98,7 @@ do_a_region <- function(region_name, region_shape) {
   
   #----- Area in deficit -----------------------------------------------------#
   summary_dat$Numdeficitcells <- 0
-  deficit <- terra::ifel(all_def < 0, 1, 0)
+  deficit <- terra::ifel(all_def < -1.2, 1, 0)
   # All forest
   vv <- values(deficit)
   deficit_cells <- sum(vv, na.rm=T)
@@ -113,11 +113,19 @@ do_a_region <- function(region_name, region_shape) {
   rm(deficit, datum)
   invisible(gc())
   
-  #----- Exactly 0 -----------------------------------------------------------#
+  #----- Just right - -1.2 to 1.2 --------------------------------------------#
   summary_dat$Numgoldilockscells <- 0
-  goldilocks <- terra::ifel(all_def == 0, 1, 0)
+  mat <- matrix(c(-100000000, -1.2, 0,
+           -1.2, 1.2, 1,
+           1.2, 1000000000, 0), byrow=T, nrow=3)
+  goldilocks <- terra::classify(all_def, mat)
   x <- which(summary_dat$Vegetation == "All forest")
   summary_dat$Numgoldilockscells[x] <- sum(values(goldilocks), na.rm=T)
+  
+  # By forest type
+  datum <- terra::zonal(goldilocks, forest_type, fun="sum")
+  x <- match(datum$category, summary_dat$Vegetation)
+  summary_dat$Numgoldilockscells[x] <- datum$forest_def
   rm(goldilocks)
   invisible(gc())
   
@@ -167,7 +175,7 @@ do_a_region <- function(region_name, region_shape) {
   invisible(gc())
   
   #----- Area in surplus and deficit -----------------------------------------#
-  surplus <- terra::ifel(all_def > 0, 1, NA)
+  surplus <- terra::ifel(all_def > 1.2, 1, NA)
   surp <- terra::mask(surplus, wui_crop)
   summary_dat$Numsurpluscells[summary_dat$Vegetation == "Forest WUI"] <- sum(values(surp), na.rm=T)
   surp <- terra::mask(surplus, wui_crop, inverse = T)
@@ -176,12 +184,20 @@ do_a_region <- function(region_name, region_shape) {
   rm(surplus, surp)
   invisible(gc())
   
-  deficit <- terra::ifel(all_def < 0, 1, NA)
+  deficit <- terra::ifel(all_def < -1.2, 1, NA)
   defr <- terra::mask(deficit, wui_crop)
   summary_dat$Numdeficitcells[summary_dat$Vegetation == "Forest WUI"] <- sum(values(defr), na.rm=T)
   defr <- terra::mask(deficit, wui_crop, inverse = T)
   summary_dat$Numdeficitcells[summary_dat$Vegetation == "Forest non-WUI"] <- sum(values(defr), na.rm=T)
   rm(deficit, defr)
+  invisible(gc())
+  
+  goldilocks <- terra::classify(all_def, mat)
+  goldf <- terra::mask(goldilocks, wui_crop)
+  summary_dat$Numgoldilockscells[summary_dat$Vegetation == "Forest WUI"] <- sum(values(goldf), na.rm=T)
+  goldf <- terra::mask(goldilocks, wui_crop, inverse = T)
+  summary_dat$Numdeficitcells[summary_dat$Vegetation == "Forest non-WUI"] <- sum(values(goldf), na.rm=T)
+  rm(goldilocks, goldf)
   invisible(gc())
   
   #----- Mean and sd of deficit ----------------------------------------------#
@@ -230,19 +246,19 @@ do_a_region <- function(region_name, region_shape) {
   invisible(gc())
   
   #----- Area in surplus and deficit -----------------------------------------#
-  surplus <- terra::ifel(all_def > 0, 1, 0)
+  surplus <- terra::ifel(all_def > 1.2, 1, 0)
   vv <- values(surplus)
   surplus_cells <- sum(vv, na.rm=T)
   rm(surplus, vv)
   
-  deficit <- terra::ifel(all_def < 0, 1, 0)
+  deficit <- terra::ifel(all_def < -1.2, 1, 0)
   vv <- values(deficit)
   deficit_cells <- sum(vv, na.rm=T)
   rm(deficit, vv)
   invisible(gc())
   
-  #----- Exactly 0 -----------------------------------------------------------#
-  goldilocks <- terra::ifel(all_def == 0, 1, 0)
+  #----- Just right ----------------------------------------------------------#
+  goldilocks <- terra::classify(all_def, mat)
   goldilocks_cells <- sum(values(goldilocks), na.rm=T)
   rm(goldilocks)
   invisible(gc())
@@ -290,7 +306,7 @@ do_a_region <- function(region_name, region_shape) {
   invisible(gc())
   
   #----- Area in surplus and deficit -----------------------------------------#
-  surplus <- terra::ifel(all_def > 0, 1, NA)
+  surplus <- terra::ifel(all_def > 1.2, 1, NA)
   surp <- terra::mask(surplus, wui_crop)
   numcells <- sum(values(surp), na.rm=T)
   summary_dat$Numsurpluscells[summary_dat$Vegetation == "Grass WUI"] <- numcells
@@ -301,7 +317,7 @@ do_a_region <- function(region_name, region_shape) {
   rm(surplus, surp)
   invisible(gc())
   
-  deficit <- terra::ifel(all_def < 0, 1, NA)
+  deficit <- terra::ifel(all_def < -1.2, 1, NA)
   defr <- terra::mask(deficit, wui_crop)
   numcells <- sum(values(defr), na.rm=T)
   summary_dat$Numdeficitcells[summary_dat$Vegetation == "Grass WUI"] <- numcells
@@ -309,6 +325,14 @@ do_a_region <- function(region_name, region_shape) {
   numcells <- sum(values(defr), na.rm=T)
   summary_dat$Numdeficitcells[summary_dat$Vegetation == "Grass non-WUI"] <- numcells
   rm(deficit, defr)
+  invisible(gc())
+  
+  goldilocks <- terra::classify(all_def, mat)
+  goldf <- terra::mask(goldilocks, wui_crop)
+  summary_dat$Numgoldilockscells[summary_dat$Vegetation == "Grass WUI"] <- sum(values(goldf), na.rm=T)
+  goldf <- terra::mask(goldilocks, wui_crop, inverse = T)
+  summary_dat$Numdeficitcells[summary_dat$Vegetation == "Grass non-WUI"] <- sum(values(goldf), na.rm=T)
+  rm(goldilocks, goldf)
   invisible(gc())
   
   #----- Mean and sd of deficit ----------------------------------------------#
@@ -359,19 +383,19 @@ do_a_region <- function(region_name, region_shape) {
   invisible(gc())
   
   #----- Area in surplus and deficit -----------------------------------------#
-  surplus <- terra::ifel(all_def > 0, 1, 0)
+  surplus <- terra::ifel(all_def > 1.2, 1, 0)
   vv <- values(surplus)
   surplus_cells <- sum(vv, na.rm=T)
   rm(surplus, vv)
   
-  deficit <- terra::ifel(all_def < 0, 1, 0)
+  deficit <- terra::ifel(all_def < -1.2, 1, 0)
   vv <- values(deficit)
   deficit_cells <- sum(vv, na.rm=T)
   rm(deficit, vv)
   invisible(gc())
   
-  #----- Exactly 0 -----------------------------------------------------------#
-  goldilocks <- terra::ifel(all_def == 0, 1, 0)
+  #----- Just right ----------------------------------------------------------#
+  goldilocks <- terra::classify(all_def, mat)
   goldilocks_cells <- sum(values(goldilocks), na.rm=T)
   rm(goldilocks)
   invisible(gc())
@@ -419,7 +443,7 @@ do_a_region <- function(region_name, region_shape) {
   invisible(gc())
   
   #----- Area in surplus and deficit -----------------------------------------#
-  surplus <- terra::ifel(all_def > 0, 1, NA)
+  surplus <- terra::ifel(all_def > 1.2, 1, NA)
   surp <- terra::mask(surplus, wui_crop)
   numcells <- sum(values(surp), na.rm=T)
   summary_dat$Numsurpluscells[summary_dat$Vegetation == "Shrub WUI"] <- numcells
@@ -430,7 +454,7 @@ do_a_region <- function(region_name, region_shape) {
   rm(surplus, surp)
   invisible(gc())
   
-  deficit <- terra::ifel(all_def < 0, 1, NA)
+  deficit <- terra::ifel(all_def < -1.2, 1, NA)
   defr <- terra::mask(deficit, wui_crop)
   numcells <- sum(values(defr), na.rm=T)
   summary_dat$Numdeficitcells[summary_dat$Vegetation == "Shrub WUI"] <- numcells
@@ -438,6 +462,14 @@ do_a_region <- function(region_name, region_shape) {
   numcells <- sum(values(defr), na.rm=T)
   summary_dat$Numdeficitcells[summary_dat$Vegetation == "Shrub non-WUI"] <- numcells
   rm(deficit, defr)
+  invisible(gc())
+  
+  goldilocks <- terra::classify(all_def, mat)
+  goldf <- terra::mask(goldilocks, wui_crop)
+  summary_dat$Numgoldilockscells[summary_dat$Vegetation == "Shrub WUI"] <- sum(values(goldf), na.rm=T)
+  goldf <- terra::mask(goldilocks, wui_crop, inverse = T)
+  summary_dat$Numdeficitcells[summary_dat$Vegetation == "Shrub non-WUI"] <- sum(values(goldf), na.rm=T)
+  rm(goldilocks, goldf)
   invisible(gc())
   
   #----- Mean and sd of deficit ----------------------------------------------#
@@ -462,6 +494,9 @@ do_a_region <- function(region_name, region_shape) {
   
   summary_dat$Deficit_area <- 
     ((summary_dat$Numdeficitcells * prod(res(fri_crop)))/10000) * ha_to_acres
+  
+  summary_dat$Goldilocks_area <- 
+    ((summary_dat$Numgoldilockscells * prod(res(fri_crop)))/10000) * ha_to_acres
   
   summary_dat$Nodata_area <- 
     ((summary_dat$Nodatacells * prod(res(fri_crop)))/10000) * ha_to_acres
