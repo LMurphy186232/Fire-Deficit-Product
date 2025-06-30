@@ -41,14 +41,8 @@ Fire deficit was calculated separately for each vegetation type. For regional ca
 Summary statistics were calculated for counties, HUC8 watersheds, and L4 ecoregions that touch SPARKs. The values are for the entire county, watershed, or ecoregion, not just the parts within the SPARK area.
 
 ```{r regions-prep}
-#| eval: false
+#| eval: true
 
-#-----------------------------------------------------------------------------#
-# PLEASE NOTE:
-# These chunks are now out of order overall. SPARK stuff must be run after the
-# raster production later in this document (all marked to eval: false). This
-# is rearranged so I can show the latest results first.
-#-----------------------------------------------------------------------------#
 fri <- terra::rast("../temp_rasters/all_fri_vals.tif")
 veg <- terra::rast("../temp_rasters/combined_veg_area.tif")
 wui <- terra::rast("../temp_rasters/wui.tif")
@@ -84,7 +78,7 @@ summary_table_dat <- NULL
 for (spark_name in all_sparks) {
   
   one_spark <- spark[spark$SPARK == spark_name]
-  summary_dat <- do_a_region(spark_name, one_spark)
+  summary_dat <- do_a_region(spark_name, one_spark, TRUE)
   summary_table_dat <- rbind(summary_table_dat, summary_dat) 
 }
 
@@ -98,7 +92,7 @@ for (i in 1:length(spark)) {
   
   summary_dat <- do_a_region(spark$name[i], spark[i])
   summary_dat$SPARK = spark$SPARK[i]
-  summary_table_dat <- rbind(summary_table_dat, summary_dat) 
+  summary_table_dat <- rbind(summary_table_dat, summary_dat, FALSE) 
 }
 
 write.csv(summary_table_dat, "SPARK watersheds.csv", row.names=F)
@@ -123,7 +117,7 @@ summary_table_dat <- NULL
 for (spark_name in all_sparks) {
   
   one_spark <- spark_co[spark_co$SPARK == spark_name]
-  summary_dat <- do_a_region(spark_name, one_spark)
+  summary_dat <- do_a_region(spark_name, one_spark, TRUE)
   summary_table_dat <- rbind(summary_table_dat, summary_dat) 
 }
 
@@ -772,3 +766,72 @@ az_spark + sb_spark + tahoe_spark + co_spark + wa_spark +
               axis_titles = "collect", guides="collect") 
 
 ```
+
+
+![](County barplot.png)
+
+
+# QA and doublecheck: Why is Santa Barbara shrubland in deficit?
+
+Marion thinks that all the Santa Barbara county shrubland being in a fire deficit is a counterintuitive result. Let's dig into why that is.
+
+Known complication: where fire return interval is longer than our record of fires (40 years), we rely on an ecoregion-wide estimate. These ecoregions are quite large and may not capture local conditions well. The local ecoregions for Santa Barbara shrubs show a deficit. However, removing these ecoregion-level areas does not shift Santa Barbara mean deficit values very much (I do not show this here, but I can if desired).
+
+So let's dive more deeply into short fire return areas for shrubs. What does the LANDFIRE FRI data say? Nothing crazy here.
+
+```{r}
+#----- Load SPARK watersheds -------------------------------------------------#
+spark <- terra::vect("../../Spark counties shapefile/spark_watersheds.shp")
+spark <- terra::project(spark, fri)
+
+spark <- spark[-grep("AK -", spark$SPARK)]
+spark <- spark[-grep("BC -", spark$SPARK)]
+
+all_sparks <- unique(spark$SPARK)
+region_name = all_sparks[3]
+region_shape = spark[spark$SPARK == region_name]
+
+#----- Clip FRI --------------------------------------------------------------#
+fri <- terra::rast("../west_us_FRI.tif")
+fri_crop <- terra::crop(fri     , region_shape)
+fri_crop <- terra::mask(fri_crop, region_shape)
+
+#----- Clip shrubs -----------------------------------------------------------#
+shrub      <- terra::rast("../western_us_shrub.tif")
+shrub_crop <- terra::crop(shrub     , region_shape)
+shrub_crop <- terra::mask(shrub_crop, region_shape)
+
+#----- Mask FRI to shrubs ----------------------------------------------------#
+fri_crop <- terra::mask(fri_crop, shrub_crop)
+fri_mean <- mean(values(fri_crop), na.rm=T)
+
+plot(fri_crop, axes=F, main=paste0("SB shrub FRI (mean ", round(fri_mean, 1), ")"))
+```
+
+Let's look at number of fires, both prescribed and non-prescribed burns.
+
+```{r}
+n_act <- terra::rast("../temp_rasters/num_fires.tif") +
+         terra::rast("../temp_rasters/num_rx.tif")
+n_crop <- terra::crop(n_act     , region_shape)
+n_crop <- terra::mask(n_crop, region_shape)
+n_crop <- terra::mask(n_crop, shrub_crop)
+plot(n_crop, axes=F, main = "SB number of fires in past 40 years")
+```
+
+
+Use the short fire return interval areas to calculate number of expected fires in that time.
+
+```{r}
+
+
+n_exp <- 40/fri_crop
+plot(round(n_exp,0), axes=F, main="SB shrubs expected fires in past 40 years")
+cat("\n\n")
+
+to_plot <- terra::ifel(n_crop > n_exp, 1, 0)
+levels(to_plot) <- data.frame(id=c(0,1), cover=c("Less than expected", "More than expected"))
+plot(to_plot, axes=F, main="SB shrub fires")
+```
+
+Counterintuitive results may be a result of weird LANDFIRE fire return interval calculations in shrub areas?

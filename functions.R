@@ -1,4 +1,36 @@
-do_a_region <- function(region_name, region_shape) {
+veg_scale <- scale_fill_manual(values = 
+                                 c("firebrick",
+                                   "darkorange1",
+                                   "darkgreen", 
+                                   "cadetblue", 
+                                   "burlywood4"), 
+                               labels = c("Frequent fire \n(FRI < 20)", 
+                                          "Frequent fire \n(FRI 20-40)", 
+                                          "Infrequent fire",
+                                          "Grass",
+                                          "Shrub"),
+                               name = "",
+                               na.translate=F)
+
+cat3_scale <- scale_fill_manual(values = 
+                                 viridisLite::viridis(n = 5),
+                               name = "",
+                               na.translate=F)
+
+cat5_scale <- scale_fill_manual(values = 
+                                  viridisLite::viridis(n = 7),
+                                name = "",
+                                na.translate=F)
+
+blank_axes <- theme(axis.title.x=element_blank(),
+                    axis.text.x=element_blank(),
+                    axis.ticks.x=element_blank(),
+                    axis.title.y=element_blank(),
+                    axis.text.y=element_blank(),
+                    axis.ticks.y=element_blank(),
+                    panel.border = element_blank())
+
+do_a_region <- function(region_name, region_shape, make_plots = F) {
   
   #----- Clip FRI ------------------------------------------------------------#
   fri_crop <- terra::crop(fri     , region_shape)
@@ -12,6 +44,8 @@ do_a_region <- function(region_name, region_shape) {
   wui_crop <- terra::crop(wui     , region_shape)
   wui_crop <- terra::mask(wui_crop, region_shape)
   #---------------------------------------------------------------------------#
+  
+  
   
   
   
@@ -32,8 +66,45 @@ do_a_region <- function(region_name, region_shape) {
                                       "Frequent fire (FRI < 20)", 
                                       "Frequent fire (FRI 20-40)", 
                                       "Infrequent fire"))
+  
+  
+  
+  
+  
+  #---------------------------------------------------------------------------#
+  # If plotting: veg map, with 5 vegetation types
+  #---------------------------------------------------------------------------#
+  if (make_plots) {
+    
+    all_veg_map <- veg_crop + 2
+    all_veg_map <- terra::classify(all_veg_map, cbind(3,0))
+    all_veg_map <- terra::classify(all_veg_map, cbind(NA,0))
+    ff <- terra::classify(forest_fri, forest_mat)
+    ff <- terra::classify(ff, cbind(NA, 0))
+    
+    all_veg_map <- all_veg_map + ff
+    all_veg_map <- terra::classify(all_veg_map, cbind(0, NA))
+    levels(all_veg_map) <- data.frame(ID = 1:5,
+                                      category = c(
+                                        "Frequent fire (FRI < 20)", 
+                                        "Frequent fire (FRI 20-40)", 
+                                        "Infrequent fire",
+                                        "Grass",
+                                        "Shrub"))
+    
+    suppressMessages(veg_map_plot <- ggplot() + 
+                       geom_spatraster(data = all_veg_map) +
+                       geom_spatvector(data = region_shape, fill=NA) +
+                       theme_bw() +
+                       blank_axes +
+                       ggtitle("Vegetation map") +
+                       veg_scale)
+    
+    rm(ff, all_veg_map)
+  }
   rm(forest_fri)
   invisible(gc())
+  
   
   
   #----- Make a total fire deficit map, including long deficit ---------------#
@@ -51,6 +122,10 @@ do_a_region <- function(region_name, region_shape) {
   #----- Mask back to FRI, no values if FRI was NA ---------------------------#
   all_def <- terra::mask(all_def, fri_crop)
   all_def <- terra::mask(all_def, forest_type)
+  
+  if (make_plots) {
+    forest_all_def <- all_def
+  }
   
   #---------------------------------------------------------------------------#
   # Extract table stats
@@ -234,6 +309,10 @@ do_a_region <- function(region_name, region_shape) {
   #----- Mask back to FRI, no values if FRI was NA ---------------------------#
   all_def <- terra::mask(all_def, fri_crop)
   all_def <- terra::mask(all_def, grass_mask)
+  
+  if (make_plots) {
+    grass_all_def <- all_def
+  }
   #---------------------------------------------------------------------------#
   
   #----- Extract table stats -------------------------------------------------#
@@ -370,6 +449,10 @@ do_a_region <- function(region_name, region_shape) {
   #----- Mask back to FRI, no values if FRI was NA ---------------------------#
   all_def <- terra::mask(all_def, fri_crop)
   all_def <- terra::mask(all_def, shrub_mask)
+  
+  if (make_plots) {
+    shrub_all_def <- all_def
+  }
   #---------------------------------------------------------------------------#
   
   
@@ -505,6 +588,74 @@ do_a_region <- function(region_name, region_shape) {
   summary_dat$Region <- region_name
   rm(fri_crop, veg_crop, wui_crop)
   invisible(gc())
+  
+  
+  
+  #---------------------------------------------------------------------------#
+  # Plotting an overall deficit map
+  #---------------------------------------------------------------------------#
+  if (make_plots) {
+    all_def <- sum(forest_all_def, grass_all_def, shrub_all_def, na.rm=T)
+    
+    three_cat_mat <- matrix(c(-100000000,         -3, 1,
+                              -3        ,       -1.2, 2,
+                              -1.2      ,        1.2, 3,
+                               1.2      ,          3, 4,
+                               3        , 1000000000, 5), byrow=T, nrow=5)
+    
+    five_cat_mat <- matrix(c(-100000000,         -3, 1,
+                             -3        ,         -2, 2,
+                             -2        ,       -1.2, 3,
+                             -1.2      ,        1.2, 4,
+                              1.2      ,          2, 5,
+                              2        ,          3, 6,
+                              3        , 1000000000, 7), byrow=T, nrow=7)
+    all_def3 <- terra::classify(all_def, three_cat_mat)
+    levels(all_def3) <- data.frame(ID = 1:5,
+                                   category = c("Substantial deficit",
+                                                "Moderate deficit",
+                                                "Balanced",
+                                                "Moderate surplus",
+                                                "Substantial surplus"))
+    
+    all_def5 <- terra::classify(all_def, five_cat_mat)
+    levels(all_def5) <- data.frame(ID = 1:7,
+                                   category = c("Substantial deficit",
+                                                "Moderate deficit",
+                                                "Mild deficit",
+                                                "Balanced",
+                                                "Mild surplus",
+                                                "Moderate surplus",
+                                                "Substantial surplus"))
+    
+    region_name <- gsub("/", "-", region_name, fixed=T)
+    
+    fire_def_plot <- ggplot() + 
+          geom_spatraster(data = all_def3) +
+          geom_spatvector(data = region_shape, fill=NA) +
+          theme_bw() +
+          blank_axes +
+          ggtitle("Forests fire deficit/surplus") +
+          cat3_scale
+    
+    ggsave(paste0("figs/", region_name, "3cat.png"), plot= print(veg_map_plot + fire_def_plot), 
+           width = 8, units="in")
+    
+    fire_def_plot <- ggplot() + 
+      geom_spatraster(data = all_def5) +
+      geom_spatvector(data = region_shape, fill=NA) +
+      theme_bw() +
+      blank_axes +
+      ggtitle("Forests fire deficit/surplus") +
+      cat5_scale
+    
+    ggsave(paste0("figs/", region_name, "5cat.png"), plot= print(veg_map_plot + fire_def_plot), 
+           width = 8, units="in")
+    
+    rm(all_def, forest_all_def, grass_all_def, shrub_all_def, all_def3, all_def5)
+    invisible(gc())
+  }
+  
 
   return(summary_dat)
 }

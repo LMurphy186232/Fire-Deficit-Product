@@ -531,7 +531,7 @@ wui_rast <- rasterize(wui, rast, fun="count", background = NA)
 writeRaster(wui_rast, "../temp_rasters/wui.tif")
 ```
 
-# Recent burns - not deliberate
+# Recent burns - not set/prescribed
 
 In order to calculate fire deficit / surplus, we need the the best possible record of recent fires. We are using the WUMI dataset created by Park Williams and compiled by Tyler McIntosh. This dataset can be downloaded from the WFFRC Cyverse folder.
 
@@ -1333,7 +1333,7 @@ where *t* is the time period evaluated, $a_i$ is annual area burned in year *i*,
 
 This is the contemporary FRP. We can take the mean ecoregion FRI as the historical value. Ecoregion-level deficit / surplus will thus be contemporary divided by historical if contemporary is greater (deficit), or negative historical divided by contemporary if historical is greater (surplus). This makes the number interpretable in the same way as calculated for more frequent fire areas.
 
-**Need a double check here to make sure I've understood this right:** When considering the area *A* and the burned areas $a_i$, I am only considering pixels within the subsetted areas: within the ecoregion, within those areas where FRI \> 40 years, within the vegetation type in question. Same when calculating mean FRI.
+When considering the area *A* and the burned areas $a_i$, I am only considering pixels within the subsetted areas: within the ecoregion, within those areas where FRI \> 40 years, within the vegetation type in question. Same when calculating mean FRI.
 
 All areas with FRI > 40 years, ignoring vegetation type:
 

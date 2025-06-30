@@ -55,14 +55,14 @@ for (single_eco in econames) {
     fri_eco <- mask(fri_eco, eco[eco_inds])
     plot(fri_eco, main=paste(eco$NA_L3NAME[eco_inds], "FRI"), axes=F)
     savePlot(paste0("figs/map-", gsub("/", "-", single_eco), ".png"), type="png")
-    dat <- values(fri_eco, dataframe=T)
+    #dat <- values(fri_eco, dataframe=T)
     
-    p1<- ggplot(data = dat, aes(x=BPS_NAME)) + 
-      geom_histogram() + theme_bw() +
-      scale_x_log10() +
-      scale_y_log10() +
-      labs(x = "FRI", title = single_eco)
-    ggsave(filename, p1)
+    #p1<- ggplot(data = dat, aes(x=BPS_NAME)) + 
+    #  geom_histogram() + theme_bw() +
+    #  scale_x_log10() +
+    #  scale_y_log10() +
+    #  labs(x = "FRI", title = single_eco)
+    #ggsave(filename, p1)
     
     #suppressMessages(print(p1))
   #}
@@ -100,16 +100,138 @@ for (single_eco in econames) {
 }
 ```
 
-## Columbia plateau
+```{r bps-by-ecoregion}
+#| eval: FALSE
+windows()
+fri <- rast("Z:/project_data/Landfire data/LF2020_BPS_220_CONUS/Tif/LC20_BPS_220.tif")
+econames <- unique(eco$NA_L3NAME)
+for (single_eco in econames) {
+  filename <- paste0("figs/bps-", gsub("/", "-", single_eco), ".png")
+  
+  #if (!file.exists(filename)) {
+  eco_inds <- which(eco$NA_L3NAME == single_eco)
+  fri_eco <- crop(fri, eco[eco_inds])
+  fri_eco <- mask(fri_eco, eco[eco_inds])
+  plot(fri_eco, main=paste(eco$NA_L3NAME[eco_inds], "Biophysical units"), axes=F)
+  savePlot(paste0("figs/bps-", gsub("/", "-", single_eco), ".png"), type="png")
+  
+}
+```
 
-::: {.columns}
-::: {.column width="33%"}
-![Image 1](figs/deficit-Arizona-New Mexico Mountains.png)
-:::
-::: {.column width="33%"}
-![Image 2](figs/fri-Arizona-New Mexico Mountains.png)
-:::
-::: {.column width="33%"}
-![Image 3](figs/map-Arizona-New Mexico Mountains.png)
-:::
-:::
+```{r}
+#| results: asis
+#| echo: false
+#| eval: true
+
+#----- Prep long-term FRI ----------------------------------------------------#
+hist_time <- 40
+
+#----- All veg ---------------------------------------------------------------#
+all_veg_dat <- read.csv("../all_veg_cells_by_ecoregion_long_FRI.csv")
+
+dat <- all_veg_dat %>% group_by(Name) %>% 
+  summarise(Area = sum(Total_Area), 
+            Burned = sum(Area_Burned),
+            FRI_Total = sum(Sum_FRI)) %>%
+  filter(Area > 0) %>%
+  mutate(FRP = if_else(Burned > 0, hist_time/(Burned/Area), NA)) %>%
+  mutate(Mean_FRI = FRI_Total / Area) %>%
+  mutate(Deficit = (FRP / Mean_FRI) - 1)
+
+econames <- unique(eco$NA_L3NAME)
+for (single_eco in econames) {
+  
+  x <- which(dat$Name == single_eco)
+  cat("##", single_eco, " (Long term deficit:", round(dat$Deficit[x],2), ")\n")
+  cat("::: {.columns}\n")
+  cat("::: {.column width=\"25%\"}\n")
+  cat(paste0("![](figs/map-", gsub("/", "-", single_eco), ".png)\n"))
+  cat(":::\n")
+  cat("::: {.column width=\"25%\"}\n")
+  cat(paste0("![](figs/bps-", gsub("/", "-", single_eco), ".png)\n"))
+  cat(":::\n")
+  cat("::: {.column width=\"25%\"}\n")
+  cat(paste0("![](figs/fri-", gsub("/", "-", single_eco), ".png)\n"))
+  cat(":::\n")
+  cat("::: {.column width=\"25%\"}\n")
+  cat(paste0("![](figs/deficit-", gsub("/", "-", single_eco), ".png)\n"))
+  cat(":::\n")
+  cat(":::\n")
+}
+```
+
+```{r}
+#| results: asis
+#| echo: false
+#| eval: false
+## 2x2 Image Grid
+
+
+
+#----- Prep long-term FRI ----------------------------------------------------#
+hist_time <- 40
+
+#----- All veg ---------------------------------------------------------------#
+all_veg_dat <- read.csv("../all_veg_cells_by_ecoregion_long_FRI.csv")
+
+dat <- all_veg_dat %>% group_by(Name) %>% 
+  summarise(Area = sum(Total_Area), 
+            Burned = sum(Area_Burned),
+            FRI_Total = sum(Sum_FRI)) %>%
+  filter(Area > 0) %>%
+  mutate(FRP = if_else(Burned > 0, hist_time/(Burned/Area), NA)) %>%
+  mutate(Mean_FRI = FRI_Total / Area) %>%
+  mutate(Deficit = (FRP / Mean_FRI) - 1)
+
+econames <- unique(eco$NA_L3NAME)
+for (single_eco in econames) {
+  
+  x <- which(dat$Name == single_eco)
+  
+  cat("##", single_eco, " (Long term deficit:", round(dat$Deficit[x],2), ")\n")
+  cat("<div style=\"display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: center; justify-items: center;\">\n")
+  cat("<img src=\"", paste0("figs/map-",     gsub("/", "-", single_eco), ".png"), "\" alt=\"\" style=\"max-width: 100%; max-height: 250px;\" />\n")
+  cat("<img src=\"", paste0("figs/bps-",     gsub("/", "-", single_eco), ".png"), "\" alt=\"\" style=\"max-width: 100%; max-height: 250px;\" />\n")
+  cat("<img src=\"", paste0("figs/fri-",     gsub("/", "-", single_eco), ".png"), "\" alt=\"\" style=\"max-width: 100%; max-height: 250px;\" />\n")
+  cat("<img src=\"", paste0("figs/deficit-", gsub("/", "-", single_eco), ".png"), "\" alt=\"\" style=\"max-width: 100%; max-height: 250px;\" />\n")
+  cat("</div>\n")    
+  
+}
+```
+
+```{r}
+#| results: asis
+#| echo: false
+#| fig-width: 2
+#| fig-height: 2
+#| eval: false
+
+
+#----- Prep long-term FRI ----------------------------------------------------#
+hist_time <- 40
+
+#----- All veg ---------------------------------------------------------------#
+all_veg_dat <- read.csv("../all_veg_cells_by_ecoregion_long_FRI.csv")
+
+dat <- all_veg_dat %>% group_by(Name) %>% 
+  summarise(Area = sum(Total_Area), 
+            Burned = sum(Area_Burned),
+            FRI_Total = sum(Sum_FRI)) %>%
+  filter(Area > 0) %>%
+  mutate(FRP = if_else(Burned > 0, hist_time/(Burned/Area), NA)) %>%
+  mutate(Mean_FRI = FRI_Total / Area) %>%
+  mutate(Deficit = (FRP / Mean_FRI) - 1)
+
+econames <- unique(eco$NA_L3NAME)
+for (single_eco in econames) {
+  
+  x <- which(dat$Name == single_eco)
+  cat("##", single_eco, " (Long term deficit:", round(dat$Deficit[x],2), ")\n")
+  cat("::: {layout-nrow-2}\n")
+  cat(paste0("![](figs/map-", gsub("/", "-", single_eco), ".png)\n"))
+  cat(paste0("![](figs/bps-", gsub("/", "-", single_eco), ".png)\n"))
+  cat(paste0("![](figs/fri-", gsub("/", "-", single_eco), ".png)\n"))
+  cat(paste0("![](figs/deficit-", gsub("/", "-", single_eco), ".png)\n"))
+  cat(":::\n")
+}
+```
