@@ -777,7 +777,7 @@ Marion thinks that all the Santa Barbara county shrubland being in a fire defici
 
 Known complication: where fire return interval is longer than our record of fires (40 years), we rely on an ecoregion-wide estimate. These ecoregions are quite large and may not capture local conditions well. The local ecoregions for Santa Barbara shrubs show a deficit. However, removing these ecoregion-level areas does not shift Santa Barbara mean deficit values very much (I do not show this here, but I can if desired).
 
-So let's dive more deeply into short fire return areas for shrubs. What does the LANDFIRE FRI data say? Nothing crazy here.
+So let's just double check the numbers for short fire return areas for shrubs. We base our known fires off of fire databases, and our expected fires off of LANDFIRE's fire regime. 
 
 ```{r}
 #----- Load SPARK watersheds -------------------------------------------------#
@@ -834,4 +834,5 @@ levels(to_plot) <- data.frame(id=c(0,1), cover=c("Less than expected", "More tha
 plot(to_plot, axes=F, main="SB shrub fires")
 ```
 
-Counterintuitive results may be a result of weird LANDFIRE fire return interval calculations in shrub areas?
+My best theory for why the results seem counterintuitive is that we are not taking into account fire intensity at all. Upticks in fire intensity but not fire frequency will not move us out of deficit, according to these calculations. (Even if they kind of do.) Considering intensity is a later refinement that we might be able to make locally, in an area with excellent historical fire records, but not widely.
+
