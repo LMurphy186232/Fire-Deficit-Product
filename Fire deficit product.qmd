@@ -1340,7 +1340,7 @@ All areas with FRI > 40 years, ignoring vegetation type:
 ```{r create-western-us-longfri-rast}
 #| eval: FALSE
 #----- Get the CSV data that has fire return interval for all BPS codes ------#
-bps <- read.csv("Z:/project_data/landfire data/fire regime/LF2016_FRI_200_CONUS/CSV_Data/LF16_FRI_200.csv")
+bps <- read.csv("Z:/project_data/landfire data/fire return interval/LF2016_FRI_200_CONUS/CSV_Data/LF16_FRI_200.csv")
 
 #----- Filter out those units with an all-fire FRI <= 40 years ---------------#
 good_bps <- which(bps$FRI_ALLFIR > 40) 
