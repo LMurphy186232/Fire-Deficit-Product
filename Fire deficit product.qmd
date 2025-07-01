@@ -1771,10 +1771,6 @@ dat <- shrub_dat %>% group_by(Name) %>%
          Burned = (Burned * prod(res(fri)))/10000) %>%
   select(-FRI_Total)
 
-#----- Make this nice and readable -------------------------------------------#
-dat$Area   <- prettyNum(as.character(round(dat$Area, 0))  , big.mark=",")
-dat$Burned <- prettyNum(as.character(round(dat$Burned, 0)), big.mark=",")
-
 eco$shrub_def <- NA
 ind <- match(eco$NA_L3NAME, dat$Name)
 eco$shrub_def <- dat$Deficit[ind]
