@@ -1,0 +1,614 @@
+---
+title: "Burn Catch Up Calculations"
+format: html
+editor: source
+date: today
+---
+
+# The goal
+
+Slack from Winslow, 6/16/2025
+
+> Getting ready for agu! Hi Lora, I’d like for us to submit the fire deficit work to agu. Abstracts are due end of July. So here’s what would be great to work on; 1. similar summaries as with the Sparks but by state. 2 an analysis by state, west wide, wui/ no wui, veg type asking the question; how much more area would need to burn over the next decade to erase the deficit?  Sound good? I like for us to keep using the Goldilocks version Crystal came up with. 
+
+Overall methodology comments from Lora:
+
+My calculations are based on matching historical fire regimes (bringing it exactly in line). This only bears mentioning because we have reporting of deficits based on a Goldilocks zone, which gives a 20% tolerance. So depending on which figures and numbers go into a final piece of work, this might require some language precision.
+
+One could approach this two ways: how much areas in deficit need to burn for them to catch up to the historical fire regime, ignoring areas in surplus (and some balanced zone, like the Goldilocks areas in some of our existing reports). Or we could consider a state as a whole unit, and allow existing surpluses to offset the catch up burning. I will calculate both numbers. It will be interesting to see how far apart they are.
+
+What I calculate will not exclude "normal" burning from catch up extra burning. Because of course we can't do that, the point being that recent burning is out of sync from historical burning and we would have a hard time predicting what will occur "naturally" in the next ten years. Again, this is a language precision thing.
+
+```{r setup, include=FALSE}
+#| echo: false
+library(terra)
+library(sf)
+library(kableExtra)
+library(ggplot2)
+library(exactextractr)
+library(tidyverse)
+library(tidyterra)
+library(patchwork)
+library(gpkg)
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(messages = FALSE)
+knitr::opts_chunk$set(warnings = FALSE)
+knitr::opts_chunk$set(results = 'asis')
+#\options(knitr.table.format = "latex")
+terraOptions(tempdir="D:/workspace/Lora/temp") # Terminator
+#terraOptions(tempdir="D:/Lora/temp") # Groot
+```
+
+```{r prep}
+#| eval: true
+
+ha_to_acres <- 2.47105
+```
+
+States reporting is just copied from SPARKs reporting doc. This will prepare statistics and maps of each state in a manner identical to the most recent SPARKs reporting.
+
+```{r states-reporting}
+#| eval: false
+
+source("functions.R")
+
+#-----------------------------------------------------------------------------#
+# Load necessary rasters. Note that we are about to recalculate a bunch of 
+# these later, with a longer time horizon. But these are our existing ones used
+# for reporting on the current state of things.
+#-----------------------------------------------------------------------------#
+fri <- terra::rast("../temp_rasters/all_fri_vals.tif")
+veg <- terra::rast("../temp_rasters/combined_veg_area.tif")
+wui <- terra::rast("../temp_rasters/wui.tif")
+
+#----- Load ecoregions with long-term FRI ------------------------------------#
+long_forst_def <- terra::rast("../temp_rasters/eco_forest_def.tif")
+long_grass_def <- terra::rast("../temp_rasters/eco_grass_def.tif")
+long_shrub_def <- terra::rast("../temp_rasters/eco_shrub_def.tif")
+
+short_def <- terra::rast("../western_us_fire_deficit.tif")
+
+
+#----- Load states -----------------------------------------------------------#
+states <- terra::vect("../Data/s_05mr24.shp")
+states <- terra::project(states, fri)
+states <- terra::crop(states, fri)
+
+all_states <- unique(states$NAME)
+
+# Remove state slivers
+all_states <- all_states[which(!all_states %in% c("North Dakota", "Texas",
+                                                  "Kansas", "Oklahoma",
+                                                  "South Dakota", "Nebraska"))]
+
+summary_table_dat <- NULL
+
+for (state_name in all_states) {
+  
+  one_state <- states[states$NAME == state_name]
+  summary_dat <- do_a_region(state_name, one_state, TRUE)
+  summary_table_dat <- rbind(summary_table_dat, summary_dat) 
+}
+
+
+write.csv(summary_table_dat, "Reporting/SPARK stats states.csv", row.names=F)
+rm(summary_dat, summary_table_dat, fri, veg, wui, long_forst_def, 
+   long_grass_def, long_shrub_def, short_def)
+invisible(gc())
+```
+
+# Calculating area needed to burn
+
+I think the best way to do this is to create a raster that calculates, for each grid cell, the number of times it needs to burn to reach 0 deficit in 10 more years. I will then have flexibility to calculate summary statistics that include surplus or not, and apply Goldilocks standards or not.
+
+## Shorter FRI cells
+For short FRI cells, for each cell, I will calculate the number of expected burns in 50 years, and subtract how many times they've already burned. Note that since "short FRI" now goes up to 50 years, we will have a slightly larger number of these cells to work with.
+
+**Output:** raster "catchup_burns.tif" that will have number of times needed to burn to have 0 deficit in 10 years. For areas in surplus, this will be negative, and thus they can be easily filtered out.
+
+
+```{r create-50-fri-raster}
+#| eval: false
+
+#-----------------------------------------------------------------------------#
+# Calculate the number of expected fires for the period 10 years from now, 
+# based on FRI. We won't use our existing FRI raster, since it's masked to
+# areas with FRI <= 40. We will redo the mask to FRI <= 50.
+#-----------------------------------------------------------------------------#
+
+#----- Get the CSV data that has fire return interval for all BPS codes ------#
+bps <- read.csv("Z:/project_data/landfire data/fire return interval/LF2016_FRI_200_CONUS/CSV_Data/LF16_FRI_200.csv")
+
+#----- Filter out those units with an all-fire FRI <= 50 years ---------------#
+good_bps <- which(bps$FRI_ALLFIR > 0 & bps$FRI_ALLFIR <= 50) 
+
+#----- Replace BPS code with FRI, making NAs for bad FRIs --------------------#
+# This matrix will be used to create a FRI raster out of the BPS codes 
+# currently stored in the raster
+mat <- matrix(c(bps$Value[good_bps], bps$FRI_ALLFIR[good_bps]), 
+              nrow=length(good_bps), ncol=2)
+
+fri_crop <- terra::rast("../temp_rasters/fri_crop.tif")
+tile <- terra::classify(fri_crop, mat, others=NA)
+writeRaster(tile, "../temp_rasters/west_us_FRI50.tif", overwrite = TRUE)
+```
+
+```{r calculate-burn-number-raster}
+#| eval: false
+
+#----- Actual number of fires - wild plus prescribed -------------------------#
+n_act <- terra::rast("../temp_rasters/num_fires.tif") +
+         terra::rast("../temp_rasters/num_rx.tif")
+
+#----- Expected number of fires ----------------------------------------------#
+fri <- terra::rast("../temp_rasters/west_us_FRI50.tif")
+n_exp <- 50/fri
+
+#----- Number to burn --------------------------------------------------------#
+# This will be negative for surplus so we have the option of balancing out or
+# only thinking about deficit
+def <- n_exp - n_act
+writeRaster(def, "../temp_rasters/catchup_burns.tif", overwrite=T)
+```
+
+
+## Longer FRI cells
+
+For longer FRI cells that take an ecoregion value instead: first, consider them in specific subsets (for instance, grassland in longer FRI areas). We will treat the mean FRI for those cells as equal to the fire rotation period. So if the mean FRI is 200 years, we will assume it takes 200 years to burn the entire area of interest one time.
+
+The expected amount of burned area $A_{exp}$ in 50 years is therefore:
+
+$$A_{exp} = A * \frac{t}{\overline{FRI}}$$
+where *A* is total area of the subset of cells, *t* is 50 years, and $\overline{FRI}$ is mean FRI for those cells.
+
+```{r create-western-us-longfri-rast}
+#| eval: FALSE
+
+#-----------------------------------------------------------------------------#
+# Prepare a raster of FRI, for those areas where FRI > 50 years
+#-----------------------------------------------------------------------------#
+
+#----- Get the CSV data that has fire return interval for all BPS codes ------#
+bps <- read.csv("Z:/project_data/landfire data/fire return interval/LF2016_FRI_200_CONUS/CSV_Data/LF16_FRI_200.csv")
+
+#----- Filter out those units with an all-fire FRI <= 50 years ---------------#
+good_bps <- which(bps$FRI_ALLFIR > 50) 
+
+#----- Replace BPS code with FRI, making NAs for bad FRIs --------------------#
+# This matrix will be used to create a FRI raster out of the BPS codes 
+# currently stored in the raster
+mat <- matrix(c(bps$Value[good_bps], bps$FRI_ALLFIR[good_bps]), 
+              nrow=length(good_bps), ncol=2)
+
+fri_crop <- terra::rast("../temp_rasters/fri_crop.tif")
+fri <- terra::classify(fri_crop, mat, others=NA)
+writeRaster(fri, "../temp_rasters/west_us_long_FRI50.tif", overwrite=TRUE)
+```
+
+
+```{r calculate-ecoregion-fri-veg-area}
+#| eval: FALSE
+
+#-----------------------------------------------------------------------------#
+# Calculate the area of each veg type within each ecoregion for only those
+# areas with a FRI > 50, and calculate the amount of area that has been
+# burned. Also calculate the SUM of FRI. These are grid cell counts and are
+# not helpful in raw form, but they will help us accurately calculate metrics.
+# For instance, sum of FRI is so we can get an average FRI across discontinuous
+# ecoregion areas.
+#-----------------------------------------------------------------------------#
+
+eco <- terra::vect("../Data/level_3_ecoregion/eco_region.shp")
+states <- terra::vect("../Data/s_05mr24.shp")
+
+fri <- terra::rast("../temp_rasters/west_us_long_FRI50.tif")
+num_fires <- terra::rast("../temp_rasters/num_fires.tif") +
+             terra::rast("../temp_rasters/num_rx.tif")
+
+eco <- terra::project(eco, fri)
+states <- terra::project(states, fri)
+states <- terra::crop(states, fri)
+
+#----- Crop level 3 ecoregions to study domain -------------------------------#
+eco <- terra::crop(eco, fri)
+
+#----- And to states ---------------------------------------------------------#
+eco <- terra::crop(eco, states)
+
+#-----------------------------------------------------------------------------#
+# All veg area - for forests, grasslands, and shrublands combined (ignoring
+# all else)
+#-----------------------------------------------------------------------------#
+all_veg <- terra::rast("../temp_rasters/combined_veg_area.tif")
+
+# Make all values 1, so I can easily add and subtract
+all_veg <- terra::classify(all_veg, cbind(2:3, c(1,1)), others=NA)
+
+# Create a raster that masks out combined veg area area on long FRIs
+good_veg <- fri + all_veg
+good_veg <- good_veg - 1 # restoring FRI value
+
+#----- Sum of FRI by ecoregion -----------------------------------------------#
+sum_fri <- exactextractr::exact_extract(fri, sf::st_as_sf(eco), fun='sum')
+
+#----- FRP: total area -------------------------------------------------------#
+# Create a raster that has 1 for areas where FRI > 50, and NA elsewhere
+good_for <- ifel(!is.na(fri), 1, NA)
+
+# Calculate number of cells left in each ecoregion
+vv <- exactextractr::exact_extract(good_for, sf::st_as_sf(eco), fun='sum')
+
+#----- How much of this area has burned? -------------------------------------#
+good_fire <- good_for + num_fires # Sum to NA out things not in our area
+good_fire <- good_fire - 1 # Get rid of the extra 1 from good_for
+
+# Calculate sum of burned cells left in each ecoregion
+v2 <- exactextractr::exact_extract(good_fire, sf::st_as_sf(eco), fun='sum')
+
+forest_dat <- data.frame(Name = eco$NA_L3NAME, 
+                         Sum_FRI = sum_fri,
+                         Total_Area = vv,
+                         Area_Burned = v2)
+write.csv(forest_dat, "../all_veg_cells_by_ecoregion_long_FRI50.csv", row.names = F)
+
+
+rm(good_veg, all_veg, good_fire)
+gc()
+#-----------------------------------------------------------------------------#
+
+
+
+#-----------------------------------------------------------------------------#
+# Forest
+#-----------------------------------------------------------------------------#
+forest <- terra::rast("../western_us_forest.tif")
+
+# Create a raster that masks out forest area on long FRIs
+good_for <- fri + forest
+good_for <- good_for - 1 # restoring FRI value
+
+#----- Sum of FRI by ecoregion -----------------------------------------------#
+sum_fri <- exactextractr::exact_extract(good_for, sf::st_as_sf(eco), fun='sum')
+
+# Create a raster that has 1 for areas of forest and FRI > 50, and NA elsewhere
+# We can start by summing; this will set NAs to NAs for both
+good_for <- ifel(!is.na(good_for), 1, NA)
+
+# Calculate number of cells left in each ecoregion
+vv <- exactextractr::exact_extract(good_for, sf::st_as_sf(eco), fun='sum')
+
+#----- How much of this area has burned? -------------------------------------#
+good_fire <- good_for + num_fires # Sum to NA out things not in our area
+good_fire <- good_fire - 1 # Get rid of the extra 1 from good_for
+
+# Calculate sum of burned cells left in each ecoregion
+v2 <- exactextractr::exact_extract(good_fire, sf::st_as_sf(eco), fun='sum')
+
+forest_dat <- data.frame(Name = eco$NA_L3NAME, 
+                         Sum_FRI = sum_fri,
+                         Total_Area = vv,
+                         Area_Burned = v2)
+write.csv(forest_dat, "../forest_cells_by_ecoregion_long_FRI50.csv", row.names = F)
+
+
+rm(forest, good_for, good_fire)
+gc()
+#-----------------------------------------------------------------------------#
+
+
+
+#-----------------------------------------------------------------------------#
+# Grassland
+#-----------------------------------------------------------------------------#
+grass <- terra::rast("../western_us_grass.tif")
+
+# Create a raster that masks out grass area on long FRIs
+good_gr <- fri + grass
+good_gr <- good_gr - 1 # restoring FRI value
+
+#----- Sum of FRI by ecoregion -----------------------------------------------#
+sum_fri <- exactextractr::exact_extract(good_gr, sf::st_as_sf(eco), fun='sum')
+
+# Create a raster that has 1 for areas of forest and FRI > 50, and NA elsewhere
+# We can start by summing; this will set NAs to NAs for both
+
+good_gr <- ifel(!is.na(good_gr), 1, NA)
+
+vv <- exactextractr::exact_extract(good_gr, sf::st_as_sf(eco), fun='sum')
+
+good_fire <- good_gr + num_fires # Sum to NA out things not in our area
+good_fire <- good_fire - 1 # Get rid of the extra 1 from good_gr
+
+# Calculate sum of burned cells left in each ecoregion
+v2 <- exactextractr::exact_extract(good_fire, sf::st_as_sf(eco), fun='sum')
+
+grass_dat <- data.frame(Name = eco$NA_L3NAME, 
+                        Total_Area = vv,
+                        Sum_FRI = sum_fri,
+                        Area_Burned = v2)
+write.csv(grass_dat, "../grass_cells_by_ecoregion_long_FRI50.csv", row.names = F)
+rm(grass, good_gr, good_fire)
+gc()
+
+#-----------------------------------------------------------------------------#
+# Shrub
+#-----------------------------------------------------------------------------#
+shrub <- terra::rast("../western_us_shrub.tif")
+
+# Create a raster that masks out shrub area on long FRIs
+good_shrub <- fri + shrub
+good_shrub <- good_shrub - 1 # restoring FRI value
+
+#----- Sum of FRI by ecoregion -----------------------------------------------#
+sum_fri <- exactextractr::exact_extract(good_shrub, sf::st_as_sf(eco), fun='sum')
+
+# Create a raster that has 1 for areas of forest and FRI > 50, and NA elsewhere
+# We can start by summing; this will set NAs to NAs for both
+good_shrub <- ifel(!is.na(good_shrub), 1, NA)
+
+vv <- exactextractr::exact_extract(good_shrub, sf::st_as_sf(eco), fun='sum')
+
+good_fire <- good_shrub + num_fires # Sum to NA out things not in our area
+good_fire <- good_fire - 1 # Get rid of the extra 1 from good_shrub
+
+shrub_dat <- data.frame(Name = eco$NA_L3NAME, 
+                        Total_Area = vv,
+                        Sum_FRI = sum_fri,
+                        Area_Burned = v2)
+write.csv(shrub_dat, "../shrub_cells_by_ecoregion_long_FRI50.csv", row.names = F)
+rm(shrub, good_shrub)
+gc()
+```
+
+
+```{r make-long-fri-ecoregions-rasters}
+#| eval: false
+#-----------------------------------------------------------------------------#
+# Prep ecoregions shapefile; we will add deficit values directly to the 
+# shapefile
+#-----------------------------------------------------------------------------#
+eco <- terra::vect("../Data/level_3_ecoregion/eco_region.shp")
+states <- terra::vect("../Data/s_05mr24.shp")
+
+fri <- terra::rast("../temp_rasters/west_us_long_FRI50.tif")
+eco <- terra::project(eco, fri)
+states <- terra::project(states, fri)
+states <- terra::crop(states, fri)
+
+#----- Crop level 3 ecoregions to study domain -------------------------------#
+eco <- terra::crop(eco, fri)
+
+#----- And to states ---------------------------------------------------------#
+eco <- terra::crop(eco, states)
+
+hist_time <- 50
+
+#-----------------------------------------------------------------------------#
+# Do the calculations by ecoregion. Note that there might be duplicates
+# for an ecoregion, as polygons might have been discontinuous
+#-----------------------------------------------------------------------------#
+
+#----- All veg ---------------------------------------------------------------#
+all_veg_dat <- read.csv("../all_veg_cells_by_ecoregion_long_FRI50.csv")
+
+dat <- 
+  # Group by ecoregion and sum area, area burned, and FRI
+  all_veg_dat %>% group_by(Name) %>% 
+  summarise(Area = sum(Total_Area), 
+            Burned = sum(Area_Burned),
+            FRI_Total = sum(Sum_FRI)) %>%
+  
+  # No empty regions that don't have this type of veg
+  filter(Area > 0) %>%
+  
+  # Calculate mean FRI
+  mutate(Mean_FRI = FRI_Total / Area) %>%
+  
+  # Calculate expected burned area
+  mutate(Aexp = (Area * hist_time) / Mean_FRI) %>%
+  
+  # Calculate number of catchup burns - expected burn area minus actual burn 
+  # area, divided by total area
+  mutate(Numburns = (Aexp - Burned) / Area) %>%
+  
+  # Cleanup
+  select(-FRI_Total)
+
+eco$allveg_numburns <- NA
+ind <- match(eco$NA_L3NAME, dat$Name)
+eco$allveg_numburns <- dat$Numburns[ind]
+
+#----- Forest ----------------------------------------------------------------#
+forest_dat <- read.csv("../forest_cells_by_ecoregion_long_FRI50.csv")
+
+dat <- forest_dat %>% group_by(Name) %>% 
+  summarise(Area = sum(Total_Area), 
+            Burned = sum(Area_Burned),
+            FRI_Total = sum(Sum_FRI)) %>%
+  filter(Area > 0) %>%
+  mutate(Mean_FRI = FRI_Total / Area) %>%
+  mutate(Aexp = (Area * hist_time) / Mean_FRI) %>%
+  mutate(Numburns = (Aexp - Burned) / Area) %>%
+  select(-FRI_Total)
+
+eco$forest_numburns <- NA
+ind <- match(eco$NA_L3NAME, dat$Name)
+eco$forest_numburns <- dat$Numburns[ind]
+
+#----- Grass -----------------------------------------------------------------#
+grass_dat <- read.csv("../grass_cells_by_ecoregion_long_FRI50.csv")
+
+dat <- grass_dat %>% group_by(Name) %>% 
+  summarise(Area = sum(Total_Area), 
+            Burned = sum(Area_Burned),
+            FRI_Total = sum(Sum_FRI)) %>%
+  filter(Area > 0) %>%
+  mutate(Mean_FRI = FRI_Total / Area) %>%
+  mutate(Aexp = (Area * hist_time) / Mean_FRI) %>%
+  mutate(Numburns = (Aexp - Burned) / Area) %>%
+  select(-FRI_Total)
+
+eco$grass_numburns <- NA
+ind <- match(eco$NA_L3NAME, dat$Name)
+eco$grass_numburns <- dat$Numburns[ind]
+
+#----- Shrubs ----------------------------------------------------------------#
+shrub_dat <- read.csv("../shrub_cells_by_ecoregion_long_FRI50.csv")
+
+dat <- shrub_dat %>% group_by(Name) %>% 
+  summarise(Area = sum(Total_Area), 
+            Burned = sum(Area_Burned),
+            FRI_Total = sum(Sum_FRI)) %>%
+  filter(Area > 0) %>%
+  mutate(Mean_FRI = FRI_Total / Area) %>%
+  mutate(Aexp = (Area * hist_time) / Mean_FRI) %>%
+  mutate(Numburns = (Aexp - Burned) / Area) %>%
+  select(-FRI_Total)
+
+eco$shrub_numburns <- NA
+ind <- match(eco$NA_L3NAME, dat$Name)
+eco$shrub_numburns <- dat$Numburns[ind]
+
+#terra::writeVector(eco, "../temp_rasters/ecoregions_with_deficit.shp", overwrite=T)
+
+#----- Now make rasters of all these -----------------------------------------#
+def_rast <- rast(fri)
+
+#-----------------------------------------------------------------------------#
+# All veg
+#-----------------------------------------------------------------------------#
+# Mask back to the same cells that went in originally, because area is critical 
+# here
+all_veg <- terra::rast("../temp_rasters/combined_veg_area.tif")
+
+# Create a raster that has 1 for areas where FRI > 50, and NA elsewhere
+all_veg <- terra::mask(all_veg, fri)
+
+# Create a raster of ecoregion values
+allvegrast <- terra::rasterize(eco, def_rast, field = "allveg_numburns", touches = TRUE)
+
+# Mask the ecoregion values to the applicable vegetation
+allvegrast <- terra::mask(allvegrast, all_veg)
+terra::writeRaster(allvegrast, "../temp_rasters/eco_all_veg_numburns.tif", overwrite=T)
+rm(all_veg, allvegrast)
+gc()
+
+#-----------------------------------------------------------------------------#
+# Forest
+#-----------------------------------------------------------------------------#
+forest <- terra::rast("../western_us_forest.tif")
+forest <- terra::mask(forest, fri)
+forestrast <- rasterize(eco, def_rast, field = "forest_numburns", touches = TRUE)
+forestrast <- terra::mask(forestrast, forest)
+terra::writeRaster(forestrast, "../temp_rasters/eco_forest_numburns.tif", overwrite=T)
+rm(forest, forestrast)
+gc()
+
+#-----------------------------------------------------------------------------#
+# Grass
+#-----------------------------------------------------------------------------#
+grass <- terra::rast("../western_us_grass.tif")
+grass <- terra::mask(grass, fri)
+grassrast <- rasterize(eco, def_rast, field = "grass_numburns", touches = TRUE)
+grassrast <- terra::mask(grassrast, grass)
+terra::writeRaster(grassrast, "../temp_rasters/eco_grass_numburns.tif", overwrite=T)
+rm(grass, grassrast)
+gc()
+
+#-----------------------------------------------------------------------------#
+# Shrub
+#-----------------------------------------------------------------------------#
+shrub <- terra::rast("../western_us_shrub.tif")
+shrub <- terra::mask(shrub, fri)
+shrubrast <- rasterize(eco, def_rast, field = "shrub_numburns", touches = TRUE)
+shrubrast <- terra::mask(shrubrast, shrub)
+terra::writeRaster(shrubrast, "../temp_rasters/eco_shrub_numburns.tif", overwrite=T )
+rm(shrub, shrubrast)
+gc()
+#plot(rasterized,range=c(0,10),
+#     fill_range=T)
+```
+
+
+
+
+
+
+
+
+
+```{r}
+#| eval: false
+
+for (region_name in all_states) {
+  
+  region_shape <- states[states$NAME == state_name]
+  
+  
+  #----- Clip FRI ------------------------------------------------------------#
+  fri_crop <- terra::crop(fri     , region_shape)
+  fri_crop <- terra::mask(fri_crop, region_shape)
+  
+  #----- Clip veg ------------------------------------------------------------#
+  veg_crop <- terra::crop(veg     , region_shape)
+  veg_crop <- terra::mask(veg_crop, region_shape)
+  
+  #----- Clip WUI ------------------------------------------------------------#
+  wui_crop <- terra::crop(wui     , region_shape)
+  wui_crop <- terra::mask(wui_crop, region_shape)
+  #---------------------------------------------------------------------------#
+  
+  
+  
+  
+  
+  #---------------------------------------------------------------------------#
+  # Forests.
+  # Frequent fire forests FRI 0-20 years
+  # Frequent fire forest FRI 20-40
+  # Infrequent fire forests (FRI > 40)
+  #---------------------------------------------------------------------------#
+  
+  #----- ID forests by fire frequency ----------------------------------------#
+  forest_mask <- terra::ifel(veg_crop == "Forest", 1, NA)
+  forest_fri  <- terra::mask(fri_crop, forest_mask)  
+  forest_mat  <- cbind(c(0,20,40), c(20, 40, 100000), 1:3)
+  forest_type <- terra::classify(forest_fri, forest_mat)
+  levels(forest_type) <- data.frame(ID = 1:3, 
+                                    category = c(
+                                      "Frequent fire (FRI < 20)", 
+                                      "Frequent fire (FRI 20-40)", 
+                                      "Infrequent fire"))
+  
+  
+  
+  
+  
+  rm(forest_fri)
+  invisible(gc())
+  
+  
+  
+  #----- Make a total fire deficit map, including long deficit ---------------#
+  long_crop <- terra::crop(long_forst_def, region_shape)
+  long_crop <- terra::mask(long_crop     , region_shape)
+  
+  short_crop <- terra::crop(short_def , region_shape)
+  short_crop <- terra::mask(short_crop, region_shape)
+  
+  #----- I want to only substitute eco-level deficit where there isn't short -#
+  long_crop <- terra::mask(long_crop, short_crop, inverse = T)
+  all_def <- terra::subst(long_crop, NA, 0) + terra::subst(short_crop, NA, 0)
+  rm(short_crop, long_crop)
+  invisible(gc())
+  #----- Mask back to FRI, no values if FRI was NA ---------------------------#
+  all_def <- terra::mask(all_def, fri_crop)
+  all_def <- terra::mask(all_def, forest_type)
+  
+  
+  
+  #---------------------------------------------------------------------------#
+  # Extract table stats
+  #---------------------------------------------------------------------------#
+}
+```
