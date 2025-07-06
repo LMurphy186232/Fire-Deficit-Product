@@ -26,7 +26,7 @@ terraOptions(tempdir="D:/workspace/Lora/temp") # Terminator
 #terraOptions(tempdir="D:/Lora/temp") # Groot
 ```
 
-# SPARKs Fire Deficit
+# SPARKs Fire Deficit Maps
 
 Fire deficit and surplus is a measure of recent fire frequency compared to historical fire frequency. Historical fire regimes are based on Landfire fire return intervals.
 
@@ -41,7 +41,7 @@ Fire deficit was calculated separately for each vegetation type. For regional ca
 Summary statistics were calculated for counties, HUC8 watersheds, and L4 ecoregions that touch SPARKs. The values are for the entire county, watershed, or ecoregion, not just the parts within the SPARK area.
 
 ```{r regions-prep}
-#| eval: true
+#| eval: false
 
 fri <- terra::rast("../temp_rasters/all_fri_vals.tif")
 veg <- terra::rast("../temp_rasters/combined_veg_area.tif")

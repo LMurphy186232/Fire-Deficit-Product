@@ -1,0 +1,47 @@
+---
+title: "SPARKs watershed maps"
+format: pdf
+editor: source
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(messages = FALSE)
+knitr::opts_chunk$set(warnings = FALSE)
+knitr::opts_chunk$set(results = 'asis')
+```
+
+```{r}
+# This document makes a presentation of the watershed deficit maps for sharing. The maps are created with SPARKs watershed maps.qmd.
+```
+
+# SPARKs Fire Deficit Maps
+
+Fire deficit and surplus is a measure of recent fire frequency compared to historical fire frequency. Historical fire regimes are based on Landfire fire return intervals.
+
+```{r}
+# How to interpret surplus/deficit values: Values above zero are surplus, and represent the number of times more an area has burned than it should have (i.e. a value of 2 means the area has burned twice as often as expected). Values below zero are deficit, and are interpretable in the same way (-2 means the area should have burned twice as often as it did).
+```
+
+Fire deficit calculations are based on total fires, *including prescribed burns*.
+
+For regional calculations, we totaled areas in 5 categories:
+
+-   Substantial deficit: burns are less than one third of expected, based on historical fire regime
+-   Moderate deficit: burns are more than one third of expected, but less than 80% of expected
+-   Balanced: burns are within 20% of expected
+-   Moderate surplus: burns are more than 120% of expected but less than 3 times expected
+-   Substantial surplus: burns are more than 3 times expected
+
+
+![](figs/AZ - Coconino County-Flagstaff Region3cat.png)
+
+![](figs/CA - Santa Barbara County3cat.png)
+
+![](figs/CA - Tahoe Sierra SPARK3cat.png)
+
+![](figs/CO - Gunnison County and Watersheds3cat.png)
+
+![](figs/WA - Klickitat County3cat.png)
+
+![](figs/WY - Upper Colorado Basin, Green River3cat.png)

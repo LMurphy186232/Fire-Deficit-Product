@@ -4,21 +4,37 @@ veg_scale <- scale_fill_manual(values =
                                    "darkgreen", 
                                    "cadetblue", 
                                    "burlywood4"), 
-                               labels = c("Very frequent fire \nforest", 
-                                          "Frequent fire \nforest", 
-                                          "Infrequent fire forest",
-                                          "Grass",
-                                          "Shrub"),
+                               #labels = c("Very frequent fire \nforest", 
+                               #           "Frequent fire \nforest", 
+                               labels=c("Frequent fire forest\n(FRI < 20)",
+                                        "Frequent fire forest\n(FRI 20-40)",
+                                        "Infrequent fire forest",
+                                        "Grass",
+                                        "Shrub"),
                                name = "",
                                na.translate=F)
 
-cat3_scale <- scale_fill_manual(values = 
-                                 viridisLite::viridis(n = 5),
+cat3_scale <- scale_fill_manual(#values = 
+                                # viridisLite::viridis(n = 5),
+                               values = c(
+                                 "indianred4",
+                                 "indianred1",
+                                 "lightyellow",
+                                 "cadetblue1",
+                                 "cadetblue4"),
                                name = "",
                                na.translate=F)
 
-cat5_scale <- scale_fill_manual(values = 
-                                  viridisLite::viridis(n = 7),
+cat5_scale <- scale_fill_manual(#values = 
+                                #  viridisLite::viridis(n = 7),
+                                values = c(
+                                  "indianred4",
+                                  "indianred3",
+                                  "indianred1",
+                                  "lightyellow",
+                                  "cadetblue1",
+                                  "cadetblue3",
+                                  "cadetblue4"),
                                 name = "",
                                 na.translate=F)
 
@@ -638,19 +654,22 @@ do_a_region <- function(region_name, region_shape, make_plots = F) {
           ggtitle("Forests fire deficit/surplus") +
           cat3_scale
     
-    ggsave(paste0("figs/", region_name, "3cat.png"), plot= print(veg_map_plot + fire_def_plot), 
+    pp <- veg_map_plot + fire_def_plot + 
+      plot_annotation(title = region_name)
+    ggsave(paste0("figs/", region_name, "3cat.png"), plot= pp, 
            width = 8, units="in")
     
-    fire_def_plot <- ggplot() + 
-      geom_spatraster(data = all_def5) +
-      geom_spatvector(data = region_shape, fill=NA) +
-      theme_bw() +
-      blank_axes +
-      ggtitle("Forests fire deficit/surplus") +
-      cat5_scale
+    #fire_def_plot <- ggplot() + 
+    #  geom_spatraster(data = all_def5) +
+    #  geom_spatvector(data = region_shape, fill=NA) +
+    #  theme_bw() +
+    #  blank_axes +
+    #  ggtitle("Forests fire deficit/surplus") +
+    #  cat5_scale
     
-    ggsave(paste0("figs/", region_name, "5cat.png"), plot= print(veg_map_plot + fire_def_plot), 
-           width = 8, units="in")
+    
+    #ggsave(paste0("figs/", region_name, "5cat.png"), plot= print(veg_map_plot + fire_def_plot), 
+    #       width = 8, units="in")
     
     rm(all_def, forest_all_def, grass_all_def, shrub_all_def, all_def3, all_def5)
     invisible(gc())
