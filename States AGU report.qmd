@@ -43,6 +43,7 @@ terraOptions(tempdir="D:/workspace/Lora/temp") # Terminator
 
 ```{r prep}
 #| eval: true
+#| echo: false
 
 ha_to_acres <- 2.47105
 ```
@@ -227,6 +228,7 @@ writeRaster(tile, "../temp_rasters/west_us_FRI50.tif", overwrite = TRUE)
 
 ```{r calculate-burn-number-raster}
 #| eval: false
+#| echo: false
 
 #----- Actual number of fires - wild plus prescribed -------------------------#
 # These rasters are produced as part of the overall fire deficit product and are
@@ -295,6 +297,7 @@ writeRaster(fri, "../temp_rasters/west_us_long_FRI50.tif", overwrite=TRUE)
 
 ```{r calculate-ecoregion-fri-veg-area}
 #| eval: FALSE
+#| echo: false
 
 #-----------------------------------------------------------------------------#
 # Calculate the area of each veg type within each ecoregion for only those
@@ -470,6 +473,7 @@ gc()
 
 ```{r make-long-fri-ecoregions-rasters}
 #| eval: false
+#| echo: false
 
 #-----------------------------------------------------------------------------#
 # Calculate the catchup burns, attach them to the ecoregion polygons, and turn
@@ -718,6 +722,7 @@ gc()
 
 ```{r catchup-burns-calcs}
 #| eval: false
+#| echo: false
 
 #-----------------------------------------------------------------------------#
 # This section combines short and long FRI rasters and does final calculations.
@@ -968,3 +973,75 @@ for (lev in c("0", "1_2", "2")) {
 write.csv(unified_table, "../States 10 year burn catchup.csv", row.names=F)
 
 ```
+
+![](figs/Arizona3cat.png)
+
+![](figs/California3cat.png)
+
+![](figs/Colorado3cat.png)
+
+![](figs/Idaho3cat.png)
+
+![](figs/Montana3cat.png)
+
+![](figs/Nevada3cat.png)
+
+![](figs/New Mexico3cat.png)
+
+![](figs/Oregon3cat.png)
+
+![](figs/Utah3cat.png)
+
+![](figs/Washington3cat.png)
+
+![](figs/Wyoming3cat.png)
+
+
+```{r}
+#| results: asis
+#| eval: false
+#| echo: false
+
+dat <- read.csv("../States 10 year burn catchup.csv")
+
+cat("# Burn catchup areas, excluding surplus areas")
+
+knitr::kable(dat %>% select(c(State, Vegetation, Area_ha_nosur_0, 
+                              Area_ha_nosur_1_2, Area_ha_nosur_2)),
+             format="latex", booktabs = T,
+             col.names = c("State", "Veg Type", "Area to burn to\n0 def (ha)",
+                           "Area to burn to\nbalanced (ha)", 
+                           "Area to eliminate\nhalf deficit (ha)")) %>%
+  kable_styling(full_width=T)
+```
+
+\newpage
+
+# Appendix - code
+
+## Calculating number of catchup burns for short FRI
+
+```{r ref.label="calculate-burn-number-raster"}
+#| echo: true
+#| eval: false
+```
+
+## Calculating number of chatchup burns for longer FRI
+
+```{r ref.label="calculate-ecoregion-fri-veg-area"}
+#| echo: true
+#| eval: false
+```
+
+```{r ref.label="make-long-fri-ecoregions-rasters"}
+#| echo: true
+#| eval: false
+```
+
+## Final catchup area calculations
+
+```{r ref.label="catchup-burns-calcs"}
+#| echo: true
+#| eval: false
+```
+
