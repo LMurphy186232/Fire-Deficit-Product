@@ -1,6 +1,6 @@
 ---
 title: "Burn Catch Up Calculations"
-format: html
+format: pdf
 editor: source
 date: today
 ---
@@ -13,11 +13,13 @@ Slack from Winslow, 6/16/2025
 
 Overall methodology comments from Lora:
 
-My calculations are based on matching historical fire regimes (bringing it exactly in line). This only bears mentioning because we have reporting of deficits based on a Goldilocks zone, which gives a 20% tolerance. So depending on which figures and numbers go into a final piece of work, this might require some language precision.
+One could approach this two ways: how much areas in deficit need to burn for them to catch up to the historical fire regime, ignoring areas in surplus (and some balanced zone, like the Goldilocks areas in some of our existing reports). Or we could consider a state as a whole unit, and allow existing surpluses to offset the catch up burning. After consultation with Winslow, he would like both (probably going to use numbers where areas in surplus have been excluded).
 
-One could approach this two ways: how much areas in deficit need to burn for them to catch up to the historical fire regime, ignoring areas in surplus (and some balanced zone, like the Goldilocks areas in some of our existing reports). Or we could consider a state as a whole unit, and allow existing surpluses to offset the catch up burning. I will calculate both numbers. It will be interesting to see how far apart they are.
+We need a numbers buffet, to be able to give ranges, and to approach from a conservative and less conservative direction. This calculates:
 
-What I calculate will not exclude "normal" burning from catch up extra burning. Because of course we can't do that, the point being that recent burning is out of sync from historical burning and we would have a hard time predicting what will occur "naturally" in the next ten years. Again, this is a language precision thing.
+-  Amount to burn to take the deficit to 0
+-  Amount to burn to enter the goldilocks zone with an error margin of 20%
+-  Amount to burn to erase half the deficit
 
 ```{r setup, include=FALSE}
 #| echo: false
@@ -49,6 +51,7 @@ States reporting is just copied from SPARKs reporting doc. This will prepare sta
 
 ```{r states-reporting}
 #| eval: false
+#| echo: false
 
 source("functions.R")
 
@@ -99,6 +102,7 @@ invisible(gc())
 
 ```{r make-pretty-tables}
 #| eval: false
+#| echo: false
 
 #-----------------------------------------------------------------------------#
 # Based on county
@@ -180,16 +184,23 @@ write.csv(summary_dat, "Reporting/Pretty table states WUI.csv", row.names=F)
 
 # Calculating area needed to burn
 
-I think the best way to do this is to create a raster that calculates, for each grid cell, the number of times it needs to burn to reach 0 deficit in 10 more years. I will then have flexibility to calculate summary statistics that include surplus or not, and apply Goldilocks standards or not.
+I base this on a raster that calculates, for each grid cell, the number of times it needs to burn to reach 0 deficit in 10 more years. Burn totals are therefore the sum of cell values multipled by the cell area. Any cell with a negative value is in surplus and we have the option of filtering it out.
 
 ## Shorter FRI cells
-For short FRI cells, for each cell, I will calculate the number of expected burns in 50 years, and subtract how many times they've already burned. Note that since "short FRI" now goes up to 50 years, we will have a slightly larger number of these cells to work with.
+For short FRI cells, for each cell, I calculate the number of expected burns in 50 years:
 
-**Output:** raster "catchup_burns.tif" that will have number of times needed to burn to have 0 deficit in 10 years. For areas in surplus, this will be negative, and thus they can be easily filtered out.
+$$n_{exp} = \frac{50}{FRI}$$
+
+I can then compare that to how many times they've burned so far in the last 40 years. Note that since "short FRI" now goes up to 50 years, we will have a slightly larger number of these cells to work with.
+
+**Output:** raster "catchup_burns0.tif" that will have number of times needed to burn to have 0 deficit in 10 years; "catchup_burns1_2.tif" has number of burns to get to within a deficit value of 1.2 (the goldilocks zone); "catchup_burns2.tif" has number of burns to get within a deficit of -2. **Note that for all of these rasters, there is only a value where FRI <= 50.**
+
+For areas in surplus, the values will be negative, and thus they can be easily filtered out.
 
 
 ```{r create-50-fri-raster}
 #| eval: false
+#| echo: false
 
 #-----------------------------------------------------------------------------#
 # Calculate the number of expected fires for the period 10 years from now, 
@@ -218,10 +229,14 @@ writeRaster(tile, "../temp_rasters/west_us_FRI50.tif", overwrite = TRUE)
 #| eval: false
 
 #----- Actual number of fires - wild plus prescribed -------------------------#
+# These rasters are produced as part of the overall fire deficit product and are
+# documented more there
 n_act <- terra::rast("../temp_rasters/num_fires.tif") +
          terra::rast("../temp_rasters/num_rx.tif")
 
 #----- Expected number of fires ----------------------------------------------#
+# This is a raster where the value is the FRI for any spot where FRI <= 50, and
+# NA otherwise
 fri <- terra::rast("../temp_rasters/west_us_FRI50.tif")
 n_exp <- 50/fri
 
@@ -229,7 +244,15 @@ n_exp <- 50/fri
 # This will be negative for surplus so we have the option of balancing out or
 # only thinking about deficit
 def <- n_exp - n_act
-writeRaster(def, "../temp_rasters/catchup_burns.tif", overwrite=T)
+writeRaster(def, "../temp_rasters/catchup_burns0.tif", overwrite=T)
+
+#----- Expected number of fires to get within goldilocks zone ----------------#
+def <- (n_exp / 1.2) - n_act
+writeRaster(def, "../temp_rasters/catchup_burns1_2.tif", overwrite=T)
+
+#----- Expected number of fires to get within deficit of -2 ------------------#
+def <- (n_exp / 2) - n_act
+writeRaster(def, "../temp_rasters/catchup_burns2.tif", overwrite=T)
 ```
 
 
@@ -242,8 +265,11 @@ The expected amount of burned area $A_{exp}$ in 50 years is therefore:
 $$A_{exp} = A * \frac{t}{\overline{FRI}}$$
 where *A* is total area of the subset of cells, *t* is 50 years, and $\overline{FRI}$ is mean FRI for those cells.
 
+**Outputs**: many rasters of the name format "eco_[veg]_numburns[level].tif", where veg is one of all_veg, forest, grass, and shrub; and level is one of 0 (for burning to 0 deficit), 1_2 (for burning to goldilocks zone), or 2 (for burning to half deficit). There are values areas in the appropriate vegetation type and where FRI > 50, and NA for everywhere else.
+
 ```{r create-western-us-longfri-rast}
-#| eval: FALSE
+#| eval: false
+#| echo: false
 
 #-----------------------------------------------------------------------------#
 # Prepare a raster of FRI, for those areas where FRI > 50 years
@@ -279,22 +305,21 @@ writeRaster(fri, "../temp_rasters/west_us_long_FRI50.tif", overwrite=TRUE)
 # ecoregion areas.
 #-----------------------------------------------------------------------------#
 
+#----- Load ecoregions, project, and crop appropriately ----------------------#
 eco <- terra::vect("../Data/level_3_ecoregion/eco_region.shp")
 states <- terra::vect("../Data/s_05mr24.shp")
-
-fri <- terra::rast("../temp_rasters/west_us_long_FRI50.tif")
-num_fires <- terra::rast("../temp_rasters/num_fires.tif") +
-             terra::rast("../temp_rasters/num_rx.tif")
-
 eco <- terra::project(eco, fri)
 states <- terra::project(states, fri)
 states <- terra::crop(states, fri)
-
-#----- Crop level 3 ecoregions to study domain -------------------------------#
 eco <- terra::crop(eco, fri)
-
-#----- And to states ---------------------------------------------------------#
 eco <- terra::crop(eco, states)
+
+#----- Load a raster that has FRI values where FRI > 50, and NA otherwise ----#
+fri <- terra::rast("../temp_rasters/west_us_long_FRI50.tif")
+
+#----- Number of fires, wild and prescribed together -------------------------#
+num_fires <- terra::rast("../temp_rasters/num_fires.tif") +
+             terra::rast("../temp_rasters/num_rx.tif")
 
 #-----------------------------------------------------------------------------#
 # All veg area - for forests, grasslands, and shrublands combined (ignoring
@@ -320,7 +345,8 @@ good_for <- ifel(!is.na(fri), 1, NA)
 vv <- exactextractr::exact_extract(good_for, sf::st_as_sf(eco), fun='sum')
 
 #----- How much of this area has burned? -------------------------------------#
-good_fire <- good_for + num_fires # Sum to NA out things not in our area
+# Make a raster with number of fires in our focus veg area and NA otherwise
+good_fire <- good_for + num_fires # Sum, to make NA cells not in our area
 good_fire <- good_fire - 1 # Get rid of the extra 1 from good_for
 
 # Calculate sum of burned cells left in each ecoregion
@@ -340,7 +366,7 @@ gc()
 
 
 #-----------------------------------------------------------------------------#
-# Forest
+# Repeat the process for just forest
 #-----------------------------------------------------------------------------#
 forest <- terra::rast("../western_us_forest.tif")
 
@@ -444,10 +470,14 @@ gc()
 
 ```{r make-long-fri-ecoregions-rasters}
 #| eval: false
+
 #-----------------------------------------------------------------------------#
+# Calculate the catchup burns, attach them to the ecoregion polygons, and turn
+# those values into rasters for each veg type and ecoregion.
+#-----------------------------------------------------------------------------#
+
 # Prep ecoregions shapefile; we will add deficit values directly to the 
 # shapefile
-#-----------------------------------------------------------------------------#
 eco <- terra::vect("../Data/level_3_ecoregion/eco_region.shp")
 states <- terra::vect("../Data/s_05mr24.shp")
 
@@ -466,7 +496,8 @@ hist_time <- 50
 
 #-----------------------------------------------------------------------------#
 # Do the calculations by ecoregion. Note that there might be duplicates
-# for an ecoregion, as polygons might have been discontinuous
+# for an ecoregion, as polygons might have been discontinuous. Add the values
+# directly to the each polygon; we can use that to make rasters later.
 #-----------------------------------------------------------------------------#
 
 #----- All veg ---------------------------------------------------------------#
@@ -490,14 +521,29 @@ dat <-
   
   # Calculate number of catchup burns - expected burn area minus actual burn 
   # area, divided by total area
-  mutate(Numburns = (Aexp - Burned) / Area) %>%
+  
+  # To get to 0 deficit:
+  mutate(Numburns0 = (Aexp - Burned) / Area) %>%
+  
+  # To get to -1.2 deficit:
+  mutate(Numburns1_2 = ((Aexp/1.2) - Burned) / Area) %>%
+  
+  # To get to -2 deficit:
+  mutate(Numburns2 = ((Aexp/2) - Burned) / Area) %>%
   
   # Cleanup
   select(-FRI_Total)
 
-eco$allveg_numburns <- NA
+#----- Add relevant number to each polygon -----------------------------------#
+eco$allveg_numburns0 <- NA
+eco$allveg_numburns1_2 <- NA
+eco$allveg_numburns2 <- NA
 ind <- match(eco$NA_L3NAME, dat$Name)
-eco$allveg_numburns <- dat$Numburns[ind]
+eco$allveg_numburns0 <- dat$Numburns0[ind]
+eco$allveg_numburns1_2 <- dat$Numburns1_2[ind]
+eco$allveg_numburns2 <- dat$Numburns2[ind]
+
+rm(dat)
 
 #----- Forest ----------------------------------------------------------------#
 forest_dat <- read.csv("../forest_cells_by_ecoregion_long_FRI50.csv")
@@ -509,12 +555,20 @@ dat <- forest_dat %>% group_by(Name) %>%
   filter(Area > 0) %>%
   mutate(Mean_FRI = FRI_Total / Area) %>%
   mutate(Aexp = (Area * hist_time) / Mean_FRI) %>%
-  mutate(Numburns = (Aexp - Burned) / Area) %>%
+  mutate(Numburns0 = (Aexp - Burned) / Area) %>%
+  mutate(Numburns1_2 = ((Aexp/1.2) - Burned) / Area) %>%
+  mutate(Numburns2 = ((Aexp/2) - Burned) / Area) %>%
   select(-FRI_Total)
 
-eco$forest_numburns <- NA
+eco$forest_numburns0 <- NA
+eco$forest_numburns1_2 <- NA
+eco$forest_numburns2 <- NA
 ind <- match(eco$NA_L3NAME, dat$Name)
-eco$forest_numburns <- dat$Numburns[ind]
+eco$forest_numburns0 <- dat$Numburns0[ind]
+eco$forest_numburns1_2 <- dat$Numburns1_2[ind]
+eco$forest_numburns2 <- dat$Numburns2[ind]
+
+rm(dat)
 
 #----- Grass -----------------------------------------------------------------#
 grass_dat <- read.csv("../grass_cells_by_ecoregion_long_FRI50.csv")
@@ -526,12 +580,20 @@ dat <- grass_dat %>% group_by(Name) %>%
   filter(Area > 0) %>%
   mutate(Mean_FRI = FRI_Total / Area) %>%
   mutate(Aexp = (Area * hist_time) / Mean_FRI) %>%
-  mutate(Numburns = (Aexp - Burned) / Area) %>%
+  mutate(Numburns0 = (Aexp - Burned) / Area) %>%
+  mutate(Numburns1_2 = ((Aexp/1.2) - Burned) / Area) %>%
+  mutate(Numburns2 = ((Aexp/2) - Burned) / Area) %>%
   select(-FRI_Total)
 
-eco$grass_numburns <- NA
+eco$grass_numburns0 <- NA
+eco$grass_numburns1_2 <- NA
+eco$grass_numburns2 <- NA
 ind <- match(eco$NA_L3NAME, dat$Name)
-eco$grass_numburns <- dat$Numburns[ind]
+eco$grass_numburns0 <- dat$Numburns0[ind]
+eco$grass_numburns1_2 <- dat$Numburns1_2[ind]
+eco$grass_numburns2 <- dat$Numburns2[ind]
+
+rm(dat)
 
 #----- Shrubs ----------------------------------------------------------------#
 shrub_dat <- read.csv("../shrub_cells_by_ecoregion_long_FRI50.csv")
@@ -543,16 +605,26 @@ dat <- shrub_dat %>% group_by(Name) %>%
   filter(Area > 0) %>%
   mutate(Mean_FRI = FRI_Total / Area) %>%
   mutate(Aexp = (Area * hist_time) / Mean_FRI) %>%
+  mutate(Numburns0 = (Aexp - Burned) / Area) %>%
+  mutate(Numburns1_2 = ((Aexp/1.2) - Burned) / Area) %>%
+  mutate(Numburns2 = ((Aexp/2) - Burned) / Area) %>%
   mutate(Numburns = (Aexp - Burned) / Area) %>%
   select(-FRI_Total)
 
-eco$shrub_numburns <- NA
+eco$shrub_numburns0 <- NA
+eco$shrub_numburns1_2 <- NA
+eco$shrub_numburns2 <- NA
 ind <- match(eco$NA_L3NAME, dat$Name)
-eco$shrub_numburns <- dat$Numburns[ind]
+eco$shrub_numburns0 <- dat$Numburns0[ind]
+eco$shrub_numburns1_2 <- dat$Numburns1_2[ind]
+eco$shrub_numburns2 <- dat$Numburns2[ind]
 
-#terra::writeVector(eco, "../temp_rasters/ecoregions_with_deficit.shp", overwrite=T)
 
-#----- Now make rasters of all these -----------------------------------------#
+
+#-----------------------------------------------------------------------------#
+# Now make rasters of all these new fields
+#-----------------------------------------------------------------------------#
+# Template raster
 def_rast <- rast(fri)
 
 #-----------------------------------------------------------------------------#
@@ -565,13 +637,22 @@ all_veg <- terra::rast("../temp_rasters/combined_veg_area.tif")
 # Create a raster that has 1 for areas where FRI > 50, and NA elsewhere
 all_veg <- terra::mask(all_veg, fri)
 
-# Create a raster of ecoregion values
-allvegrast <- terra::rasterize(eco, def_rast, field = "allveg_numburns", touches = TRUE)
-
-# Mask the ecoregion values to the applicable vegetation
-allvegrast <- terra::mask(allvegrast, all_veg)
-terra::writeRaster(allvegrast, "../temp_rasters/eco_all_veg_numburns.tif", overwrite=T)
-rm(all_veg, allvegrast)
+for (lev in c("0", "1_2", "2")) {
+  # Create a raster of ecoregion values
+  allvegrast <- terra::rasterize(eco, def_rast, 
+                                 field = paste0("allveg_numburns", lev), 
+                                 touches = TRUE)
+  
+  # Mask the ecoregion values to the applicable vegetation
+  allvegrast <- terra::mask(allvegrast, all_veg)
+  
+  # Write out and save
+  terra::writeRaster(allvegrast, 
+            paste0("../temp_rasters/eco_all_veg_numburns", lev, ".tif"), 
+            overwrite=T)
+  rm(allvegrast)
+}
+rm(all_veg)
 gc()
 
 #-----------------------------------------------------------------------------#
@@ -579,10 +660,16 @@ gc()
 #-----------------------------------------------------------------------------#
 forest <- terra::rast("../western_us_forest.tif")
 forest <- terra::mask(forest, fri)
-forestrast <- rasterize(eco, def_rast, field = "forest_numburns", touches = TRUE)
-forestrast <- terra::mask(forestrast, forest)
-terra::writeRaster(forestrast, "../temp_rasters/eco_forest_numburns.tif", overwrite=T)
-rm(forest, forestrast)
+for (lev in c("0", "1_2", "2")) {
+  forestrast <- rasterize(eco, def_rast, 
+                          field = paste0("forest_numburns", lev), 
+                          touches = TRUE)
+  forestrast <- terra::mask(forestrast, forest)
+  terra::writeRaster(forestrast, 
+        paste0("../temp_rasters/eco_forest_numburns", lev, ".tif"), overwrite=T)
+  rm(forestrast)
+}
+rm(forest)
 gc()
 
 #-----------------------------------------------------------------------------#
@@ -590,10 +677,16 @@ gc()
 #-----------------------------------------------------------------------------#
 grass <- terra::rast("../western_us_grass.tif")
 grass <- terra::mask(grass, fri)
-grassrast <- rasterize(eco, def_rast, field = "grass_numburns", touches = TRUE)
-grassrast <- terra::mask(grassrast, grass)
-terra::writeRaster(grassrast, "../temp_rasters/eco_grass_numburns.tif", overwrite=T)
-rm(grass, grassrast)
+for (lev in c("0", "1_2", "2")) {
+  grassrast <- rasterize(eco, def_rast, 
+                         field = paste0("grass_numburns", lev), 
+                         touches = TRUE)
+  grassrast <- terra::mask(grassrast, grass)
+  terra::writeRaster(grassrast, 
+      paste0("../temp_rasters/eco_grass_numburns", lev, ".tif"), overwrite=T)
+  rm(grassrast)
+}
+rm(grass)
 gc()
 
 #-----------------------------------------------------------------------------#
@@ -601,13 +694,18 @@ gc()
 #-----------------------------------------------------------------------------#
 shrub <- terra::rast("../western_us_shrub.tif")
 shrub <- terra::mask(shrub, fri)
-shrubrast <- rasterize(eco, def_rast, field = "shrub_numburns", touches = TRUE)
-shrubrast <- terra::mask(shrubrast, shrub)
-terra::writeRaster(shrubrast, "../temp_rasters/eco_shrub_numburns.tif", overwrite=T )
-rm(shrub, shrubrast)
+for (lev in c("0", "1_2", "2")) {
+  shrubrast <- rasterize(eco, def_rast, 
+                         field = paste0("shrub_numburns", lev), 
+                         touches = TRUE)
+  shrubrast <- terra::mask(shrubrast, shrub)
+  terra::writeRaster(shrubrast, 
+          paste0("../temp_rasters/eco_shrub_numburns", lev, ".tif"), 
+          overwrite=T)
+  rm(shrubrast)
+}
+rm(shrub)
 gc()
-#plot(rasterized,range=c(0,10),
-#     fill_range=T)
 ```
 
 
@@ -621,49 +719,14 @@ gc()
 ```{r catchup-burns-calcs}
 #| eval: false
 
+#-----------------------------------------------------------------------------#
+# This section combines short and long FRI rasters and does final calculations.
+#-----------------------------------------------------------------------------#
+
 # This FRI is just to ID forest types
 fri <- terra::rast("../temp_rasters/all_fri_vals.tif")
 veg <- terra::rast("../temp_rasters/combined_veg_area.tif")
 wui <- terra::rast("../temp_rasters/wui.tif")
-
-#----- Make a unified burn map -----------------------------------------------#
-catchup_short <- terra::rast("../temp_rasters/catchup_burns.tif")
-forest_long   <- terra::rast("../temp_rasters/eco_forest_numburns.tif")
-grass_long    <- terra::rast("../temp_rasters/eco_grass_numburns.tif")
-shrub_long    <- terra::rast("../temp_rasters/eco_shrub_numburns.tif")
-
-#----- A brief testing section. There should be no overlap in values ---------#
-double_check <- F
-if (double_check) {
-  vv1 <- catchup_short + forest_long
-  if (!is.nan(unlist(global(vv1, fun="min")))) stop("uh oh")
-  
-  vv1 <- catchup_short + grass_long
-  if (!is.nan(unlist(global(vv1, fun="min")))) stop("uh oh")
-  
-  vv1 <- catchup_short + shrub_long
-  if (!is.nan(unlist(global(vv1, fun="min")))) stop("uh oh")
-  
-  vv1 <- grass_long + forest_long
-  if (!is.nan(unlist(global(vv1, fun="min")))) stop("uh oh")
-  
-  vv1 <- shrub_long + forest_long
-  if (!is.nan(unlist(global(vv1, fun="min")))) stop("uh oh")
-  
-  vv1 <- grass_long + shrub_long
-  if (!is.nan(unlist(global(vv1, fun="min")))) stop("uh oh")
-  rm(vv1)
-  gc()
-}
-
-catchup_short <- terra::classify(catchup_short, cbind(NA, 0))
-forest_long   <- terra::classify(forest_long  , cbind(NA, 0))
-grass_long    <- terra::classify(grass_long   , cbind(NA, 0))
-shrub_long    <- terra::classify(grass_long   , cbind(NA, 0))
-
-numburns <- sum(catchup_short, forest_long, grass_long, shrub_long)
-rm(catchup_short, forest_long, grass_long, shrub_long)
-gc()
 
 #----- Load states -----------------------------------------------------------#
 states <- terra::vect("../Data/s_05mr24.shp")
@@ -677,144 +740,231 @@ all_states <- all_states[which(!all_states %in% c("North Dakota", "Texas",
                                                   "Kansas", "Oklahoma",
                                                   "South Dakota", "Nebraska"))]
 
-summary_table_dat <- NULL
+unified_table <- NULL
 
-for (region_name in all_states) {
-  
-  region_shape <- states[states$NAME == region_name]
-  
-  #----- Clip burn catchup map ----------------------------------------------#
-  numburns_crop <- terra::crop(numburns     , region_shape)
-  numburns_crop <- terra::mask(numburns_crop, region_shape)
-  
-  #----- Clip FRI ------------------------------------------------------------#
-  fri_crop <- terra::crop(fri     , region_shape)
-  fri_crop <- terra::mask(fri_crop, region_shape)
-  
-  #----- Clip veg ------------------------------------------------------------#
-  veg_crop <- terra::crop(veg     , region_shape)
-  veg_crop <- terra::mask(veg_crop, region_shape)
-  
-  #----- Clip WUI ------------------------------------------------------------#
-  wui_crop <- terra::crop(wui     , region_shape)
-  wui_crop <- terra::mask(wui_crop, region_shape)
-  #---------------------------------------------------------------------------#
-  
-  
-  
-  
-  
-  #---------------------------------------------------------------------------#
-  # Forests.
-  # Frequent fire forests FRI 0-20 years
-  # Frequent fire forest FRI 20-40
-  # Infrequent fire forests (FRI > 40)
-  #---------------------------------------------------------------------------#
-  
-  #----- ID forests by fire frequency ----------------------------------------#
-  forest_mask <- terra::ifel(veg_crop == "Forest", 1, NA)
-  forest_fri  <- terra::mask(fri_crop, forest_mask)  
-  forest_mat  <- cbind(c(0,20,40), c(20, 40, 100000), 1:3)
-  forest_type <- terra::classify(forest_fri, forest_mat)
-  levels(forest_type) <- data.frame(ID = 1:3, 
-                                    category = c(
-                                      "Frequent fire (FRI < 20)", 
-                                      "Frequent fire (FRI 20-40)", 
-                                      "Infrequent fire"))
-  rm(forest_fri)
-  invisible(gc())
-  
-  #----- Extract table stats -------------------------------------------------#
-  
-  #----- Amount to burn by forest type, surplus included ---------------------#
-  burntemp <- terra::mask(numburns_crop, forest_type)
-  datum <- terra::zonal(burntemp, forest_type, fun="sum")
-  summary_dat <- data.frame(Vegetation = levels(forest_type)[[1]]$category,
-                            Numcells = NA)
-  x <- match(datum$category, summary_dat$Vegetation)
-  summary_dat$Numcells[x] <- datum$BPS_NAME
-  rm(datum)
-  invisible(gc())
-  
-  #----- Forest WUI ----------------------------------------------------------#
-  summary_dat <- rbind(summary_dat, 
-                       data.frame(Vegetation = c("Forest WUI", "Forest non-WUI"),
-                                  Numcells = 0))
 
-  datum <- mask(burntemp, wui_crop)
-  summary_dat$Numcells[summary_dat$Vegetation == "Forest WUI"] <- unlist(global(datum, fun="sum", na.rm=T))
-  datum <- mask(burntemp, wui_crop, inverse=T)
-  summary_dat$Numcells[summary_dat$Vegetation == "Forest non-WUI"] <- unlist(global(datum, fun="sum", na.rm=T))
-  rm(datum, burntemp)
-  invisible(gc())
-  #---------------------------------------------------------------------------#
+#----- Do all three burn levels separately -----------------------------------#
+for (lev in c("0", "1_2", "2")) {
   
+  #----- Make a unified burn map ---------------------------------------------#
+  catchup_short <- terra::rast(paste0("../temp_rasters/catchup_burns", lev, ".tif"))
+  forest_long   <- terra::rast(paste0("../temp_rasters/eco_forest_numburns", lev, ".tif"))
+  grass_long    <- terra::rast(paste0("../temp_rasters/eco_grass_numburns", lev, ".tif"))
+  shrub_long    <- terra::rast(paste0("../temp_rasters/eco_shrub_numburns", lev, ".tif"))
   
+  #----- A brief testing section. There should be no overlap in values ---------#
+  double_check <- T
+  if (double_check) {
+    vv1 <- catchup_short + forest_long
+    if (!is.nan(unlist(global(vv1, fun="min")))) stop("uh oh")
+    
+    vv1 <- catchup_short + grass_long
+    if (!is.nan(unlist(global(vv1, fun="min")))) stop("uh oh")
+    
+    vv1 <- catchup_short + shrub_long
+    if (!is.nan(unlist(global(vv1, fun="min")))) stop("uh oh")
+    
+    vv1 <- grass_long + forest_long
+    if (!is.nan(unlist(global(vv1, fun="min")))) stop("uh oh")
+    
+    vv1 <- shrub_long + forest_long
+    if (!is.nan(unlist(global(vv1, fun="min")))) stop("uh oh")
+    
+    vv1 <- grass_long + shrub_long
+    if (!is.nan(unlist(global(vv1, fun="min")))) stop("uh oh")
+    rm(vv1)
+    gc()
+  }
   
+  #----- If we turn NAs to 0s, we can just sum the rasters to create a 
+  # unified raster -----------------------------------------------------------#
+  catchup_short <- terra::classify(catchup_short, cbind(NA, 0))
+  forest_long   <- terra::classify(forest_long  , cbind(NA, 0))
+  grass_long    <- terra::classify(grass_long   , cbind(NA, 0))
+  shrub_long    <- terra::classify(grass_long   , cbind(NA, 0))
   
-  #---------------------------------------------------------------------------#
-  # Grass
-  #---------------------------------------------------------------------------#
-  grass_mask <- terra::ifel(veg_crop == "Grass", 1, NA)
+  numburns <- sum(catchup_short, forest_long, grass_long, shrub_long)
+  rm(catchup_short, forest_long, grass_long, shrub_long)
+  gc()
   
-  #----- Extract table stats -------------------------------------------------#
+  summary_table_dat <- NULL
   
-  #----- Amount to burn, surplus included ------------------------------------#
-  burntemp <- terra::mask(numburns_crop, grass_mask)
-  datum <- unlist(global(burntemp, fun="sum", na.rm=T))
-  summary_dat <- rbind(summary_dat,
-                       data.frame(Vegetation = "Grass",
-                            Numcells = datum))
+  for (region_name in all_states) {
+    
+    region_shape <- states[states$NAME == region_name]
+    
+    #----- Clip burn catchup map ---------------------------------------------#
+    numburns_crop <- terra::crop(numburns     , region_shape)
+    numburns_crop <- terra::mask(numburns_crop, region_shape)
+    
+    #----- Clip FRI ----------------------------------------------------------#
+    fri_crop <- terra::crop(fri     , region_shape)
+    fri_crop <- terra::mask(fri_crop, region_shape)
+    
+    #----- Clip veg ----------------------------------------------------------#
+    veg_crop <- terra::crop(veg     , region_shape)
+    veg_crop <- terra::mask(veg_crop, region_shape)
+    
+    #----- Clip WUI ----------------------------------------------------------#
+    wui_crop <- terra::crop(wui     , region_shape)
+    wui_crop <- terra::mask(wui_crop, region_shape)
+    #-------------------------------------------------------------------------#
+    
+    
+    
+    # Do two loops, one for including surplus, one for excluding
+    state_stats <- NULL
+    for (pass in 1:2) {
+      
+      #-----------------------------------------------------------------------#
+      # Forests.
+      # Frequent fire forests FRI 0-20 years
+      # Frequent fire forest FRI 20-40
+      # Infrequent fire forests (FRI > 40)
+      #-----------------------------------------------------------------------#
+      
+      #----- ID forests by fire frequency ------------------------------------#
+      forest_mask <- terra::ifel(veg_crop == "Forest", 1, NA)
+      forest_fri  <- terra::mask(fri_crop, forest_mask)  
+      forest_mat  <- cbind(c(0,20,40), c(20, 40, 100000), 1:3)
+      forest_type <- terra::classify(forest_fri, forest_mat)
+      levels(forest_type) <- data.frame(ID = 1:3, 
+                                        category = c(
+                                          "Frequent fire (FRI < 20)", 
+                                          "Frequent fire (FRI 20-40)", 
+                                          "Infrequent fire"))
+      rm(forest_fri)
+      invisible(gc())
+      
+      #----- Extract table stats ---------------------------------------------#
+      
+      #----- Amount to burn by forest type -----------------------------------#
+      burntemp <- terra::mask(numburns_crop, forest_type)
+      datum <- terra::zonal(burntemp, forest_type, fun="sum")
+      summary_dat <- data.frame(Vegetation = levels(forest_type)[[1]]$category,
+                                Numcells = NA)
+      x <- match(datum$category, summary_dat$Vegetation)
+      summary_dat$Numcells[x] <- datum$BPS_NAME
+      rm(datum)
+      invisible(gc())
+      
+      #----- Forest WUI ------------------------------------------------------#
+      summary_dat <- rbind(summary_dat, 
+                           data.frame(Vegetation = c("Forest WUI", 
+                                                     "Forest non-WUI"),
+                                      Numcells = 0))
+      
+      datum <- mask(burntemp, wui_crop)
+      summary_dat$Numcells[summary_dat$Vegetation == "Forest WUI"] <- 
+        unlist(global(datum, fun="sum", na.rm=T))
+      datum <- mask(burntemp, wui_crop, inverse=T)
+      summary_dat$Numcells[summary_dat$Vegetation == "Forest non-WUI"] <- 
+        unlist(global(datum, fun="sum", na.rm=T))
+      rm(datum, burntemp)
+      invisible(gc())
+      #-----------------------------------------------------------------------#
+      
+      
+      
+      
+      #-----------------------------------------------------------------------#
+      # Grass
+      #-----------------------------------------------------------------------#
+      grass_mask <- terra::ifel(veg_crop == "Grass", 1, NA)
+      
+      #----- Extract table stats ---------------------------------------------#
+      
+      #----- Amount to burn --------------------------------------------------#
+      burntemp <- terra::mask(numburns_crop, grass_mask)
+      datum <- unlist(global(burntemp, fun="sum", na.rm=T))
+      summary_dat <- rbind(summary_dat,
+                           data.frame(Vegetation = "Grass",
+                                      Numcells = datum))
+      
+      #----- Grass WUI -------------------------------------------------------#
+      summary_dat <- rbind(summary_dat, 
+                           data.frame(Vegetation = c("Grass WUI", 
+                                                     "Grass non-WUI"),
+                                      Numcells = 0))
+      
+      datum <- mask(burntemp, wui_crop)
+      summary_dat$Numcells[summary_dat$Vegetation == "Grass WUI"] <- 
+        unlist(global(datum, fun="sum", na.rm=T))
+      datum <- mask(burntemp, wui_crop, inverse=T)
+      summary_dat$Numcells[summary_dat$Vegetation == "Grass non-WUI"] <- 
+        unlist(global(datum, fun="sum", na.rm=T))
+      rm(datum, grass_mask, burntemp)
+      invisible(gc())
+      
+      
+      
+      #-----------------------------------------------------------------------#
+      # Shrubs
+      #-----------------------------------------------------------------------#
+      shrub_mask <- terra::ifel(veg_crop == "Shrub", 1, NA)
+      
+      #----- Extract table stats ---------------------------------------------#
+      
+      #----- Amount to burn --------------------------------------------------#
+      burntemp <- terra::mask(numburns_crop, shrub_mask)
+      datum <- unlist(global(burntemp, fun="sum", na.rm=T))
+      summary_dat <- rbind(summary_dat,
+                           data.frame(Vegetation = "Shrub",
+                                      Numcells = datum))
+      
+      #----- Shrub WUI -------------------------------------------------------#
+      summary_dat <- rbind(summary_dat, 
+                           data.frame(Vegetation = c("Shrub WUI", 
+                                                     "Shrub non-WUI"),
+                                      Numcells = 0))
+      
+      datum <- mask(burntemp, wui_crop)
+      summary_dat$Numcells[summary_dat$Vegetation == "Shrub WUI"] <- 
+        unlist(global(datum, fun="sum", na.rm=T))
+      datum <- mask(burntemp, wui_crop, inverse=T)
+      summary_dat$Numcells[summary_dat$Vegetation == "Shrub non-WUI"] <- 
+        unlist(global(datum, fun="sum", na.rm=T))
+      rm(datum, shrub_mask, burntemp)
+      invisible(gc())
+      
+      if (pass == 1) {
+        
+        #----- This is the first pass: label the stats so far ----------------#
+        state_stats <- summary_dat
+        names(state_stats)[names(state_stats)=="Numcells"] <- "Sumplussur"
+        
+        #----- Mask out negative (surplus) values in numburns ----------------#
+        numburns_crop <- terra::ifel(numburns_crop < 0, 0, numburns_crop)
+        
+      } else {
+        
+        #----- This is the second pass: label the stats ----------------------#
+        names(summary_dat)[names(summary_dat)=="Numcells"] <- "Sumnosur"
+        summary_dat <- merge(summary_dat, state_stats, by = "Vegetation")
+      }
+    } # end of for (pass in 1:2) {
+    
+    summary_dat$State = region_name
+    summary_table_dat <- rbind(summary_table_dat, summary_dat)
+  }
   
-  #----- Grass WUI -----------------------------------------------------------#
-  summary_dat <- rbind(summary_dat, 
-                       data.frame(Vegetation = c("Grass WUI", "Grass non-WUI"),
-                                  Numcells = 0))
+  #----- Convert cell sums to area -------------------------------------------#
+  summary_table_dat[[paste0("Area_ha_nosur_", lev)]] <- 
+    summary_table_dat$Sumnosur * prod(res(numburns_crop))/10000
+  summary_table_dat[[paste0("Area_ha_plussur_", lev)]] <- 
+    summary_table_dat$Sumplussur * prod(res(numburns_crop))/10000
+  summary_table_dat$Sumnosur <- NULL
+  summary_table_dat$Sumplussur <- NULL
+  
+  if (is.null(unified_table)) {
+    unified_table = summary_table_dat
+  } else {
+    unified_table <- merge(unified_table, summary_table_dat, by=c("State", "Vegetation"))
+  }
+} # for (lev in c("0", "1_2", "2"))
 
-  datum <- mask(burntemp, wui_crop)
-  summary_dat$Numcells[summary_dat$Vegetation == "Grass WUI"] <- unlist(global(datum, fun="sum", na.rm=T))
-  datum <- mask(burntemp, wui_crop, inverse=T)
-  summary_dat$Numcells[summary_dat$Vegetation == "Grass non-WUI"] <- unlist(global(datum, fun="sum", na.rm=T))
-  rm(datum, grass_mask, burntemp)
-  invisible(gc())
-  
-  
-  
-  #---------------------------------------------------------------------------#
-  # Shrubs
-  #---------------------------------------------------------------------------#
-  shrub_mask <- terra::ifel(veg_crop == "Shrub", 1, NA)
-  
-  #----- Extract table stats -------------------------------------------------#
-  
-  #----- Amount to burn, surplus included ------------------------------------#
-  burntemp <- terra::mask(numburns_crop, shrub_mask)
-  datum <- unlist(global(burntemp, fun="sum", na.rm=T))
-  summary_dat <- rbind(summary_dat,
-                       data.frame(Vegetation = "Shrub",
-                            Numcells = datum))
-  
-  #----- Shrub WUI -----------------------------------------------------------#
-  summary_dat <- rbind(summary_dat, 
-                       data.frame(Vegetation = c("Shrub WUI", "Shrub non-WUI"),
-                                  Numcells = 0))
 
-  datum <- mask(burntemp, wui_crop)
-  summary_dat$Numcells[summary_dat$Vegetation == "Shrub WUI"] <- unlist(global(datum, fun="sum", na.rm=T))
-  datum <- mask(burntemp, wui_crop, inverse=T)
-  summary_dat$Numcells[summary_dat$Vegetation == "Shrub non-WUI"] <- unlist(global(datum, fun="sum", na.rm=T))
-  rm(datum, shrub_mask, burntemp)
-  invisible(gc())
-  
-  summary_dat$State = region_name
-  
-  summary_table_dat <- rbind(summary_table_dat, summary_dat)
-}
 
-#----- Convert cell sums to area ---------------------------------------------#
-summary_table_dat$Area_ha <- summary_table_dat$Numcells * prod(res(numburns_crop))/10000
-summary_table_dat$Numcells <- NULL
-
-write.csv(summary_table_dat, "../States 10 year burn catchup.csv", row.names=F)
+write.csv(unified_table, "../States 10 year burn catchup.csv", row.names=F)
 
 ```
