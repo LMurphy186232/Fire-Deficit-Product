@@ -29,6 +29,12 @@ Addition 7/10/2025, from Winslow via Slack:
 
 > What if we calculate it where it just takes one fire to reset the clock but what if we consider maintenance/ So if a place is in balance now,  but will go out of balance in the next decade that needs to be treated also. Or if a place is in deficit, the clock is reset, but the the Historical FRI is 5 years so it would need to be treated twice. 
 
+I am calling "catch-up burning" the amount of burning required to restore the historical fire return interval, where multiple burns may be required. I am calling "reset burning" the amount of treating required, where any burning in an area of deficit resets the clock, and multiple burns will only be required in areas with very short fire return intervals to maintain balance.
+
+My basic method for both is to calculate expected burns in 10 years for each area, with the appropriate method depending on whether the FRI is longer or shorter, and compare with the amount of burning so far. For catchup burns, we just use the difference. For reset burns, we use the difference, capped at 1. 
+
+**Note on results:** For vegetation type / region combos where much of the area is in a long FRI area, where we make ecoregion-level calculations, the amount of burning (either catchup or reset) might be much less than the area in deficit. That's because, when an ecoregion is in deficit, the whole thing is in deficit; but it may be the case that only a small percentage of the area may need to burn to pull the whole thing back into balance. Our catchup and reset calculations take this into account.
+
 ```{r setup, include=FALSE}
 #| echo: false
 library(terra)
@@ -56,7 +62,32 @@ terraOptions(tempdir="D:/workspace/Lora/temp") # Terminator
 ha_to_acres <- 2.47105
 ```
 
+# States reporting
+
 States reporting is just copied from SPARKs reporting doc. This will prepare statistics and maps of each state in a manner identical to the most recent SPARKs reporting.
+
+![](figs/Arizona3cat.png)
+
+![](figs/California3cat.png)
+
+![](figs/Colorado3cat.png)
+
+![](figs/Idaho3cat.png)
+
+![](figs/Montana3cat.png)
+
+![](figs/Nevada3cat.png)
+
+![](figs/New Mexico3cat.png)
+
+![](figs/Oregon3cat.png)
+
+![](figs/Utah3cat.png)
+
+![](figs/Washington3cat.png)
+
+![](figs/Wyoming3cat.png)
+
 
 ```{r states-reporting}
 #| eval: false
@@ -193,7 +224,7 @@ write.csv(summary_dat, "Reporting/Pretty table states WUI.csv", row.names=F)
 
 # Calculating area needed to burn
 
-I base this on a raster that calculates, for each grid cell, the number of times it needs to burn to reach 0 deficit in 10 more years. Burn totals are therefore the sum of cell values multipled by the cell area. Any cell with a negative value is in surplus and we have the option of filtering it out. I am calling "catch-up burning" the amount of burning required to restore the historical fire return interval, where multiple burns may be required. I am calling "reset burning" the amount of treating required, where any burning in an area of deficit resets the clock, and multiple burns will only be required in areas with very short fire return intervals to maintain balance.
+I base this on a raster that calculates, for each grid cell, the number of times it needs to burn to reach 0 deficit in 10 more years. Burn totals are therefore the sum of cell values multipled by the cell area. Any cell with a negative value is in surplus and we have the option of filtering it out. 
 
 ## Shorter FRI cells
 For short FRI cells, for each cell, I calculate the number of expected burns in 50 years:
@@ -953,27 +984,6 @@ for (type in c("catchup", "reset")) {
 }
 ```
 
-![](figs/Arizona3cat.png)
-
-![](figs/California3cat.png)
-
-![](figs/Colorado3cat.png)
-
-![](figs/Idaho3cat.png)
-
-![](figs/Montana3cat.png)
-
-![](figs/Nevada3cat.png)
-
-![](figs/New Mexico3cat.png)
-
-![](figs/Oregon3cat.png)
-
-![](figs/Utah3cat.png)
-
-![](figs/Washington3cat.png)
-
-![](figs/Wyoming3cat.png)
 
 
 ```{r}
