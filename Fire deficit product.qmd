@@ -29,9 +29,11 @@ terraOptions(tempdir="D:/workspace/Lora/temp") # Terminator
 
 # Wildland-Urban Interface
 
-WUI data was downloaded from [https://silvis.forest.wisc.edu/maps-data/wildland-urban-interface/]( https://silvis.forest.wisc.edu/maps-data/wildland-urban-interface/). 
+WUI data was downloaded from [https://silvis.forest.wisc.edu/maps-data/wildland-urban-interface/]( https://silvis.forest.wisc.edu/maps-data/wildland-urban-interface/). The reference is [https://silvis.forest.wisc.edu/wp-content/uploads/sites/379/2023/03/Carlson-Ecological-Applications-2022-Carlson-The-wildland-urban-interface-in-the-United-States-based-on-125-million-building.pdf](Carlson, A.R., Helmers, D.P., Hawbaker, T.J., Mockrin, M.H., and V. C. Radeloff. 2022. The wildland–urban interface in the United States based on 125 million building locations. Ecological Applications, 2022;32:e2597.)
 
-There are several possible ways to define the WUI. I am using the product derived from building footprints, at the finest available resolution (100 m).
+There are several possible ways to define the WUI. I am using the product derived from building footprints, with a neighborhood scale of 500 m. From Carlson et al: 
+
+> We determined that the neighborhood with a 500-m radius therefore most closely matches commonly accepted definitions of the WUI for wildfire resource allocation and planning based on communities rather than individual structures (Wildland Fire Executive Council, 2014), while still providing a high level of spatial detail around building locations. We focus on maps produced using this neighborhood size as our recommended products for wildfire planning and for general purposes.
 
 
 ```{r rasterize-wui}
@@ -41,14 +43,14 @@ There are several possible ways to define the WUI. I am using the product derive
 fri <- terra::rast("../temp_rasters/all_fri_vals.tif")
 
 #----- Load WUI --------------------------------------------------------------#
-wui <- terra::vect("Z:/project_data/western_fire/wui/CONUS_WUI_structures_MSBFP.gdb", layer="CONUS_wui_poly_final_100")
+wui <- terra::vect("Z:/project_data/western_fire/wui/CONUS_WUI_structures_MSBFP.gdb", layer="CONUS_wui_poly_final_500")
 wui <- terra::project(wui, fri)
 wui <- terra::crop(wui, fri)
 
 rast <- terra::rast(fri)
 
 wui_rast <- rasterize(wui, rast, fun="count", background = NA)
-writeRaster(wui_rast, "../temp_rasters/wui.tif")
+writeRaster(wui_rast, "../temp_rasters/wui.tif", overwrite=T)
 ```
 
 # Recent burns - not prescribed
