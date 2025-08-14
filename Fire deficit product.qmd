@@ -29,7 +29,7 @@ terraOptions(tempdir="D:/workspace/Lora/temp") # Terminator
 
 # Wildland-Urban Interface
 
-WUI data was downloaded from [https://silvis.forest.wisc.edu/maps-data/wildland-urban-interface/]( https://silvis.forest.wisc.edu/maps-data/wildland-urban-interface/). The reference is [https://silvis.forest.wisc.edu/wp-content/uploads/sites/379/2023/03/Carlson-Ecological-Applications-2022-Carlson-The-wildland-urban-interface-in-the-United-States-based-on-125-million-building.pdf](Carlson, A.R., Helmers, D.P., Hawbaker, T.J., Mockrin, M.H., and V. C. Radeloff. 2022. The wildland–urban interface in the United States based on 125 million building locations. Ecological Applications, 2022;32:e2597.)
+WUI data was downloaded from [https://silvis.forest.wisc.edu/maps-data/wildland-urban-interface/]( https://silvis.forest.wisc.edu/maps-data/wildland-urban-interface/). The reference is [Carlson, A.R., Helmers, D.P., Hawbaker, T.J., Mockrin, M.H., and V. C. Radeloff. 2022. The wildland–urban interface in the United States based on 125 million building locations. Ecological Applications, 2022;32:e2597.](https://silvis.forest.wisc.edu/wp-content/uploads/sites/379/2023/03/Carlson-Ecological-Applications-2022-Carlson-The-wildland-urban-interface-in-the-United-States-based-on-125-million-building.pdf)
 
 There are several possible ways to define the WUI. I am using the product derived from building footprints, with a neighborhood scale of 500 m. From Carlson et al: 
 
