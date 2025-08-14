@@ -1,0 +1,215 @@
+---
+title: "Paper analysis"
+format: pdf
+author: Lora Murphy
+date: today
+editor: visual
+---
+
+```{r setup, include=FALSE}
+library(terra)
+library(sf)
+library(kableExtra)
+library(ggplot2)
+library(exactextractr)
+library(tidyverse)
+library(tidyterra)
+library(patchwork)
+library(gpkg)
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(messages = FALSE)
+knitr::opts_chunk$set(warnings = FALSE)
+knitr::opts_chunk$set(results = 'asis')
+#\options(knitr.table.format = "latex")
+terraOptions(tempdir="D:/workspace/Lora/temp") # Terminator
+#terraOptions(tempdir="D:/Lora/temp") # Groot
+```
+
+This analysis is what we will base the paper on. It is similar to the analysis for SPARKs and states. The goal of this analysis is to produce a table, inspired by one in Jennifer Balch's good fire paper (this is a screenshot and readability is not super important to me):
+
+![](figs/balch_table.png)
+
+We would like area in deficit and mean deficit/surplus numbers for the following categories: each state, WUI, Non WUI, Wilderness, Non wilderness, and All of the west.
+
+## Fire deficit
+
+Fire deficit for frequent fire vegetation types is when the number of observed burns in the past 40 years, both prescribed and not, is less than the expected number of burns. Surplus is when observed burns is greater than expected burns. To remain on the conservative side, if an area's observed burns are within 20% of expected, we will consider it to be on target and not in surplus or deficit.
+
+### The (very simple) math
+
+The number of expected fires $N_{exp}$ in the 40 years of our burn data is $40/FRI$, and call $N_{act}$ the number of observed fires from the dataset (wild plus prescribed burns). For surpluses, we take $N_{act}/N_{exp}$; for deficits, we take the inverse of that, and add a negative. (If an area has not burned ($N_{act}=0$), deficit will be equal to negative expected fires.) Note that this means that surpluses are $\geq$ 1, and deficits are $\leq$ -1, and no values ever fall within -1 and 1. With our conservative buffer, this means we consider areas in deficit when their value is $\leq -1.2$.
+
+# Frequent fire calculations
+
+We calculate area in deficit for areas in frequent fire forests, grasslands, and shrublands. "Frequent fire" is defined as having an [FRI](https://landfire.gov/fire-regime/fri) value $\leq$ 40 years, as defined by Landfire. For every 30 m by 30 m gridcell in the FRI raster, we have defined the dominant vegetation type and classified it into forest, grassland, or shrubland (or none of the above). These classifications are based on the [Landfire Existing Vegetation Cover](https://landfire.gov/vegetation/evc) product. (More details can be found in the file Fire deficit product.doc.)
+
+```{r states-calcs}
+
+#-----------------------------------------------------------------------------#
+# These calculations use rasters that have already been created in the "Fire
+# deficit product.qmd" script
+#-----------------------------------------------------------------------------#
+
+#----- Load vegetation type --------------------------------------------------#
+veg <- terra::rast("../temp_rasters/combined_veg_area.tif")
+
+#----- Load frequent fire veg deficit/surplus --------------------------------#
+def <- terra::rast("../western_us_fire_deficit.tif")
+
+#----- Load states -----------------------------------------------------------#
+states <- terra::vect("../Data/s_05mr24.shp")
+states <- terra::project(states, def)
+states <- terra::crop(states, def)
+
+all_states <- unique(states$NAME)
+
+# Remove state slivers
+all_states <- all_states[which(!all_states %in% c("North Dakota", "Texas",
+                                                  "Kansas", "Oklahoma",
+                                                  "South Dakota", "Nebraska"))]
+
+#----- Prepare a place to put numbers. Areas at this point will be cell counts
+summary_table_dat <- data.frame(Group = all_states,
+                                forest_total_area = NA,
+                                grass_total_area = NA,
+                                shrub_total_area = NA,
+                                forest_deficit_area = NA,
+                                grass_defifict_area = NA,
+                                shrub_deficit_area = NA,
+                                forest_mean_deficit = NA,
+                                grass_mean_deficit = NA,
+                                shrub_mean_deficit = NA,
+                                forest_sd_deficit = NA,
+                                grass_sd_deficit = NA,
+                                shrub_sd_deficit = NA)
+
+for (state_name in all_states) {
+  state_row <- which(summary_table_dat$Group == state_name)
+  
+  one_state <- states[states$NAME == state_name]
+
+  #----- Clip veg to state ---------------------------------------------------#
+  veg_crop <- terra::crop(veg     , one_state)
+  veg_crop <- terra::mask(veg_crop, one_state)
+  
+  #----- Clip deficit to state -----------------------------------------------#
+  def_crop <- terra::crop(def     , one_state)
+  def_crop <- terra::mask(def_crop, one_state)
+  
+  #---------------------------------------------------------------------------#
+  # Frequent fire forests: veg = Forest, FRI <= 40
+  #---------------------------------------------------------------------------#
+  
+  #----- Find veg = "Forest" -------------------------------------------------#
+  forest_mask <- terra::ifel(veg_crop == "Forest", 1, NA)
+  
+  #----- Mask deficit to forest ----------------------------------------------#
+  forest_def <- terra::mask(def_crop, forest_mask)
+  
+  #----- Calculate total area. Our forest mask = 1 where forest, so just sum -#
+  vv <- values(forest_mask)
+  summary_table_dat$forest_total_area[state_row] <- sum(vv, na.rm=T)
+  rm(vv, forest_mask)
+  invisible(gc())
+  
+  #----- Area in deficit -----------------------------------------------------#
+  def_values <- terra::values(forest_def)
+  summary_table_dat$forest_deficit_area[state_row] <- 
+    sum(def_values < -1.2, na.rm=T)
+  
+  #----- Mean and sd of deficit/surplus --------------------------------------#
+  summary_table_dat$forest_mean_deficit[state_row] <- mean(def_values, na.rm=T)
+  summary_table_dat$forest_sd_deficit  [state_row] <- sd  (def_values, na.rm=T)
+  
+  rm(def_values, forest_def)
+  invisible(gc())
+  #---------------------------------------------------------------------------#
+  
+  
+  
+  
+  #---------------------------------------------------------------------------#
+  # Frequent fire grass
+  #---------------------------------------------------------------------------#
+  #----- Find veg = "Grass" --------------------------------------------------#
+  grass_mask <- terra::ifel(veg_crop == "Grass", 1, NA)
+  
+  #----- Mask deficit to grass -----------------------------------------------#
+  grass_def <- terra::mask(def_crop, grass_mask)
+  
+  #----- Calculate total area. Our grass mask = 1 where grass, so just sum -#
+  vv <- values(grass_mask)
+  summary_table_dat$grass_total_area[state_row] <- sum(vv, na.rm=T)
+  rm(vv, grass_mask)
+  invisible(gc())
+  
+  #----- Area in deficit -----------------------------------------------------#
+  def_values <- terra::values(grass_def)
+  summary_table_dat$grass_deficit_area[state_row] <- 
+    sum(def_values < -1.2, na.rm=T)
+  
+  #----- Mean and sd of deficit/surplus --------------------------------------#
+  summary_table_dat$grass_mean_deficit[state_row] <- mean(def_values, na.rm=T)
+  summary_table_dat$grass_sd_deficit  [state_row] <- sd  (def_values, na.rm=T)
+  
+  rm(def_values, grass_def)
+  invisible(gc())
+  #---------------------------------------------------------------------------#
+  
+  
+  
+  #---------------------------------------------------------------------------#
+  # Shrub
+  #---------------------------------------------------------------------------#
+  #----- Find veg = "shrub" --------------------------------------------------#
+  shrub_mask <- terra::ifel(veg_crop == "Shrub", 1, NA)
+  
+  #----- Mask deficit to shrub -----------------------------------------------#
+  shrub_def <- terra::mask(def_crop, shrub_mask)
+  
+  #----- Calculate total area. Our shrub mask = 1 where shrub, so just sum -#
+  vv <- values(shrub_mask)
+  summary_table_dat$shrub_total_area[state_row] <- sum(vv, na.rm=T)
+  rm(vv, shrub_mask)
+  invisible(gc())
+  
+  #----- Area in deficit -----------------------------------------------------#
+  def_values <- terra::values(shrub_def)
+  summary_table_dat$shrub_deficit_area[state_row] <- 
+    sum(def_values < -1.2, na.rm=T)
+  
+  #----- Mean and sd of deficit/surplus --------------------------------------#
+  summary_table_dat$shrub_mean_deficit[state_row] <- mean(def_values, na.rm=T)
+  summary_table_dat$shrub_sd_deficit  [state_row] <- sd  (def_values, na.rm=T)
+  
+  rm(def_values, shrub_def)
+  invisible(gc())
+}
+
+write.csv(summary_table_dat, "Reporting/state_stats_for_paper.csv", row.names=F)
+```
+
+
+# Infrequent fire: ecoregion level
+
+Here are maps of the deficit/surplus for infrequent fire forests only by level 3 ecoregion.
+
+```{r}
+#| eval: false
+
+# This doesn't work, not worth spending time on as it's just an example. But I 
+# might use this code later when I actually do have a table to display.
+knitr::kable(data.frame(
+  Group = c("States", "WUI", "Non Wui", "Wilderness", "Non wilderness", "All of the west"),
+  fff1 = rep("X", 6),
+  ffg1 = rep("X", 6),
+  ffs1 = rep("X", 6),
+  fff2 = rep("X", 6),
+  ffg2 = rep("X", 6),
+  ffs2 = rep("X", 6)),
+  col.names = c("Group", "Frequent fire forests", "Frequent fire grasslands", 
+                "Frequent fire shrublands", "Frequent fire forests", 
+                "Frequent fire grasslands", "Frequent fire shrublands")
+) %>% add_header_above(c(" " = 1,"Area in deficit" = 3, 
+                         "Mean surplus/deficit" = 3)) %>% kable_styling(full_width=T)
+```
