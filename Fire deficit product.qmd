@@ -157,7 +157,7 @@ writeRaster(rx_rast, "../temp_rasters/num_rx.tif", overwrite = T)
 
 We are using the fire return interval (FRI) to separate the western US into frequent fire and infrequent fire areas. For the frequent fire areas, we have the ability to create a finer resolution spatially-explicit map of fire deficit/surplus.
 
-When we started this project, we defined "frequent fire" as having an FRI of 40 years or less, which was the length of our observed fire records. But with a more conservative definition of frequent fire, allowing for more of a buffer before an area tips over into deficit, we also want to look at a definition of "frequent fire" as FRI $\leq$ 32 years (20% margin).
+When we started this project, we defined "frequent fire" as having an FRI of 40 years or less, which was the length of our observed fire records. But with a more conservative definition of frequent fire, allowing for more of a buffer before an area tips over into deficit, we also want to look at a definition of "frequent fire" as FRI $\leq$ 33 years (20% margin).
 
 Fire return interval data is from [Landfire](https://landfire.gov/fire-regime/fri). Let's check the completeness of the raster - looks pretty complete.
 
@@ -242,12 +242,12 @@ No locations in Alaska have a FRI $\leq$ 40 years. No further products will be c
 
 ## Western US map of Fire Return Interval
 
-**Output:** rasters called "west_us_FRI40.tif" and "west_us_FRI32.tif", of CONUS cropped to the WFFRC study area, with a map of Landfire's 2016 FRI_ALLFIR values where FRI_ALLFIR is $\leq$ 40 or $\leq$ 32, respectively. (See appendix for summary Landfire documentation.)
+**Output:** rasters called "west_us_FRI40.tif" and "west_us_FRI33.tif", of CONUS cropped to the WFFRC study area, with a map of Landfire's 2016 FRI_ALLFIR values where FRI_ALLFIR is $\leq$ 40 or $\leq$ 33, respectively. (See appendix for summary Landfire documentation.)
 
 ```{r create-western-us-fri-rast}
 #| eval: FALSE
 
-for (threshold in c(32, 40)) {
+for (threshold in c(33, 40)) {
   
   #---------------------------------------------------------------------------#
   # Note that this uses a tiled approach, because I had a lot of crashes trying
@@ -342,9 +342,9 @@ plot(fri, axes=F,
 plot(states, add=T, fill=NULL)
 
 
-fri <- terra::rast("../Rasters FRI 32/west_us_FRI32.tif")
+fri <- terra::rast("../Rasters FRI 33/west_us_FRI33.tif")
 plot(fri, axes=F,
-     main="Fire return interval where values <= 32 years")
+     main="Fire return interval where values <= 33 years")
 plot(states, add=T, fill=NULL)
 ```
 
@@ -352,9 +352,9 @@ plot(states, add=T, fill=NULL)
 
 # Fire deficit / surplus for frequent fire areas
 
-**Output:** raster called "western_us_fire_deficit40.tif" or "western_us_fire_deficit32.tif". The value in each raster is the deficit or surplus. Values above zero are surplus, and represent the number of times more an area has burned than it should have (i.e. a value of 2 means the area has burned twice as many times as expected). Values below zero are deficit, and are interpretable in the same way (-2 means the area should have burned twice as much as it did).
+**Output:** raster called "western_us_fire_deficit40.tif" or "western_us_fire_deficit33.tif". The value in each raster is the deficit or surplus. Values above zero are surplus, and represent the number of times more an area has burned than it should have (i.e. a value of 2 means the area has burned twice as many times as expected). Values below zero are deficit, and are interpretable in the same way (-2 means the area should have burned twice as much as it did).
 
-The number of expected fires $N_{exp}$ is either $40/FRI$ or $32/FRI$, and call $N_{act}$ the number of observed fires from the dataset (wild plus prescribed burns). The fire balance (either deficit or surplus) is calculated as follows:
+The number of expected fires $N_{exp}$ is either $40/FRI$ or $33/FRI$, and call $N_{act}$ the number of observed fires from the dataset (wild plus prescribed burns). The fire balance (either deficit or surplus) is calculated as follows:
 
 $$balance = \begin{cases}
         N_{act}/N_{exp} & if N_{act} \geq N_{exp}  \\
@@ -372,7 +372,7 @@ For comparison, there is a separate raster called "western_us_fire_deficit_norx.
 n_act <- terra::rast("../temp_rasters/num_fires.tif") +
          terra::rast("../temp_rasters/num_rx.tif")
 
-for (threshold in c(32, 40)) {
+for (threshold in c(33, 40)) {
   
   #----- Expected number of fires ----------------------------------------------#
   fri <- terra::rast(paste0("../Rasters FRI ", threshold, "/west_us_FRI",
@@ -410,12 +410,12 @@ plot(states, add=T, fill=NULL)
 rm(def)
 invisible(gc())
 
-def <- terra::rast(paste0("../Rasters FRI 32/western_us_fire_deficit32.tif"),)
+def <- terra::rast(paste0("../Rasters FRI 33/western_us_fire_deficit33.tif"),)
 plot(def, axes=F,
      range=c(-5,5),
      fill_range=T,
      col=map.pal("bgyr"),#, bias=2.5),
-     main="Fire deficit / surplus based on FRI 32")
+     main="Fire deficit / surplus based on FRI 33")
 plot(states, add=T, fill=NULL)
 rm(def)
 invisible(gc())
@@ -592,7 +592,7 @@ invisible(gc())
 
 ## Frequent fire forest area deficit/surplus
 
-**Output:** rasters called "forest_deficit40.tif" (where FRI $\leq$ 40 years) and "forest_deficit32.tif" (where FRI $\leq$ 32 years), where the values in the raster "western_us_fire_deficitX.tif" are masked out to areas in our forest raster ("western_us_forest.tif").
+**Output:** rasters called "forest_deficit40.tif" (where FRI $\leq$ 40 years) and "forest_deficit33.tif" (where FRI $\leq$ 33 years), where the values in the raster "western_us_fire_deficitX.tif" are masked out to areas in our forest raster ("western_us_forest.tif").
 
 ```{r create-forest-deficit-rast}
 #| eval: false
@@ -603,10 +603,10 @@ defi <- terra::rast("../Rasters FRI 40/western_us_fire_deficit40.tif")
 fordef <- terra::mask(defi, fors)
 writeRaster(fordef, "../Rasters FRI 40/forest_deficit40.tif", overwrite=T)
 
-defi <- terra::rast("../Rasters FRI 32/western_us_fire_deficit32.tif")
+defi <- terra::rast("../Rasters FRI 33/western_us_fire_deficit33.tif")
 
 fordef <- terra::mask(defi, fors)
-writeRaster(fordef, "../Rasters FRI 32/forest_deficit32.tif", overwrite=T)
+writeRaster(fordef, "../Rasters FRI 33/forest_deficit33.tif", overwrite=T)
 ```
 
 ```{r}
@@ -620,12 +620,12 @@ plot(states, add=T, fill=NULL)
 rm(fordef)
 invisible(gc())
 
-fordef <- terra::rast("../Rasters FRI 32/western_us_fire_deficit32.tif")
+fordef <- terra::rast("../Rasters FRI 33/western_us_fire_deficit33.tif")
 plot(fordef, axes=F,
      range=c(-5,5),
      fill_range=T,
      #col=map.pal("bgyr", bias=2.5),
-     main="Forest area FRI 32 fire deficit / surplus")
+     main="Forest area FRI 33 fire deficit / surplus")
 plot(states, add=T, fill=NULL)
 rm(fordef)
 invisible(gc())
@@ -730,7 +730,7 @@ invisible(gc())
 
 ## Grass area fire deficit/surplus where FRI $\leq$ 40 years
 
-**Output:** rasters called "grass_deficit40.tif" (where FRI $\leq$ 40 years) and "grass_deficit32.tif" (where FRI $\leq$ 32 years), where the values in the raster "western_us_fire_deficitX.tif" are masked out to areas in our grass raster ("western_us_grass.tif").
+**Output:** rasters called "grass_deficit40.tif" (where FRI $\leq$ 40 years) and "grass_deficit33.tif" (where FRI $\leq$ 33 years), where the values in the raster "western_us_fire_deficitX.tif" are masked out to areas in our grass raster ("western_us_grass.tif").
 
 ```{r create-grass-deficit-rast}
 #| eval: false
@@ -740,9 +740,9 @@ defi <- terra::rast("../Rasters FRI 40/western_us_fire_deficit40.tif")
 fordef <- terra::mask(defi, fors)
 writeRaster(fordef, "../Rasters FRI 40/grass_deficit.tif", overwrite=T)
 
-defi <- terra::rast("../Rasters FRI 32/western_us_fire_deficit32.tif")
+defi <- terra::rast("../Rasters FRI 33/western_us_fire_deficit33.tif")
 fordef <- terra::mask(defi, fors)
-writeRaster(fordef, "../Rasters FRI 32/grass_deficit32.tif", overwrite=T)
+writeRaster(fordef, "../Rasters FRI 33/grass_deficit33.tif", overwrite=T)
 ```
 
 ```{r}
@@ -756,12 +756,12 @@ plot(states, add=T, fill=NULL)
 rm(fordef)
 invisible(gc())
 
-fordef <- terra::rast("../Rasters FRI 32/grass_deficit32.tif")
+fordef <- terra::rast("../Rasters FRI 33/grass_deficit33.tif")
 plot(fordef, axes=F,
      range=c(-5,2),
      fill_range=T,
      #col=map.pal("bgyr", bias=2.5),
-     main="Grass area FRI 32 fire deficit / surplus")
+     main="Grass area FRI 33 fire deficit / surplus")
 plot(states, add=T, fill=NULL)
 rm(fordef)
 invisible(gc())
@@ -857,7 +857,7 @@ invisible(gc())
 
 ## Shrub area fire deficit/surplus where FRI $\leq$ 40 years
 
-**Output:** rasters called "shrub_deficit40.tif" (where FRI $\leq$ 40 years) and "shrub_deficit32.tif" (where FRI $\leq$ 32 years), where the values in the raster "western_us_fire_deficitX.tif" are masked out to areas in our shrub raster ("western_us_shrub.tif").
+**Output:** rasters called "shrub_deficit40.tif" (where FRI $\leq$ 40 years) and "shrub_deficit33.tif" (where FRI $\leq$ 33 years), where the values in the raster "western_us_fire_deficitX.tif" are masked out to areas in our shrub raster ("western_us_shrub.tif").
 
 ```{r create-shrub-deficit-rast}
 #| eval: false
@@ -868,9 +868,9 @@ defi <- terra::rast("../Rasters FRI 40/western_us_fire_deficit40.tif")
 fordef <- terra::mask(defi, fors)
 writeRaster(fordef, "../Rasters FRI 40/shrub_deficit40.tif", overwrite=T)
 
-defi <- terra::rast("../Rasters FRI 32/western_us_fire_deficit32.tif")
+defi <- terra::rast("../Rasters FRI 33/western_us_fire_deficit33.tif")
 fordef <- terra::mask(defi, fors)
-writeRaster(fordef, "../Rasters FRI 32/shrub_deficit32.tif", overwrite=T)
+writeRaster(fordef, "../Rasters FRI 33/shrub_deficit33.tif", overwrite=T)
 ```
 
 ```{r}
@@ -884,12 +884,12 @@ plot(states, add=T, fill=NULL)
 rm(fordef)
 invisible(gc())
 
-fordef <- terra::rast("../Rasters FRI 32/shrub_deficit32.tif")
+fordef <- terra::rast("../Rasters FRI 33/shrub_deficit33.tif")
 plot(fordef, axes=F,
      range=c(-5,5),
      fill_range=T,
      #col=map.pal("bgyr", bias=2.5),
-     main="Shrub area FRI 32 fire deficit / surplus")
+     main="Shrub area FRI 33 fire deficit / surplus")
 plot(states, add=T, fill=NULL)
 rm(fordef)
 invisible(gc())
@@ -937,13 +937,13 @@ where *t* is the time period evaluated, $a_i$ is annual area burned in year *i*,
 
 This is the contemporary FRP. We can take the mean ecoregion FRI as the historical value. Ecoregion-level deficit / surplus will thus be contemporary divided by historical if contemporary is greater (deficit), or negative historical divided by contemporary if historical is greater (surplus). This makes the number interpretable in the same way as calculated for more frequent fire areas.
 
-When considering the area *A* and the burned areas $a_i$, I am only considering pixels within the subsetted areas: within the ecoregion, within those areas where FRI \> 40 years or FRI \> 32 years (to complement the two possible definitions of frequent fire areas1), within the vegetation type in question. Same when calculating mean FRI.
+When considering the area *A* and the burned areas $a_i$, I am only considering pixels within the subsetted areas: within the ecoregion, within those areas where FRI \> 40 years or FRI \> 33 years (to complement the two possible definitions of frequent fire areas1), within the vegetation type in question. Same when calculating mean FRI.
 
 
 ```{r create-western-us-longfri-rast}
 #| eval: FALSE
 
-for (threshold in c(32, 40)) {
+for (threshold in c(33, 40)) {
   #----- Get the CSV data that has fire return interval for all BPS codes ----#
   bps <- read.csv("Z:/project_data/landfire data/fire return interval/LF2016_FRI_200_CONUS/CSV_Data/LF16_FRI_200.csv")
   
@@ -980,9 +980,9 @@ plot(eco, add=T, border="red")
 
 
 
-fri <- terra::rast("../Rasters FRI 32/west_us_long_FRI32.tif")
+fri <- terra::rast("../Rasters FRI 33/west_us_long_FRI33.tif")
 plot(fri, axes=F, 
-     main="Study areas with FRI > 32 years, with ecoregions")
+     main="Study areas with FRI > 33 years, with ecoregions")
 plot(eco, add=T, border="red")
 ```
 
@@ -1004,10 +1004,10 @@ states <- terra::vect("../Data/s_05mr24.shp")
 num_fires <- terra::rast("../temp_rasters/num_fires.tif") +
              terra::rast("../temp_rasters/num_rx.tif")
 
-for (threshold in c(32, 40)) {
+for (threshold in c(33, 40)) {
   fri <- terra::rast(paste0("../Rasters FRI ", threshold, "/west_us_long_FRI",
                             threshold, ".tif"))
-  if (threshold == 32) {
+  if (threshold == 33) {
     eco <- terra::project(eco, fri)
     states <- terra::project(states, fri)
     states <- terra::crop(states, fri)
